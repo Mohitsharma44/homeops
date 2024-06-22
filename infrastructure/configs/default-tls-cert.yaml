@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: default-tls-cert
+  namespace: ingress-nginx
+spec:
+  secretName: default-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.sharmamohit.com"
+  dnsNames:
+    - "sharmamohit.com"
+    - "*.sharmamohit.com"

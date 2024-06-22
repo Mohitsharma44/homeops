@@ -1,0 +1,23 @@
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: "mohitsharma44@gmail.com"
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - selector:
+          dnsZones:
+            - "sharmamohit.com"
+        dns01:
+          route53:
+            region: "us-west-2"
+            hostedZoneID: Z20MFT717KZF32
+            accessKeyID: AKIA5DTOK7YMJAL2YHM2
+            secretAccessKeySecretRef:
+              name: "r53-credentials-secret"
+              key: secret-access-key
