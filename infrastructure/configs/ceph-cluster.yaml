@@ -1,0 +1,34 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: rook-ceph-cluster
+  namespace: rook-ceph
+spec:
+  chart:
+    spec:
+      chart: rook-ceph-cluster
+      version: 1.9.x
+      sourceRef:
+        kind: HelmRepository
+        name: rook-release
+        namespace: flux-system
+  interval: 30m
+  timeout: 10m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: -1 # keep trying to remediate
+    crds: CreateReplace # Upgrade CRDs on package update
+  releaseName: rook-ceph-cluster
+  values:
+    toolbox:
+      enabled: true
+    monitoring:
+      enabled: false
+      createPrometheusRules: false
+    cephClusterSpec:
+      storage:
+        useAllNodes: true
+        userAllDevices: true

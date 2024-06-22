@@ -4,3 +4,4 @@ resources:
   - cluster-issuer.yaml
   - metallb-ipaddressPool.yaml
   - default-tls-cert.yaml
+  - ceph-cluster.yaml
