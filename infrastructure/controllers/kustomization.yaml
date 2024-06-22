@@ -4,3 +4,4 @@ resources:
   - certmanager
   - metallb
   - ingress-nginx
+  - rook-ceph

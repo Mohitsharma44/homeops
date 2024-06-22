@@ -9,6 +9,11 @@ export GITHUB_REPO=homeops
 export SOPS_AGE_KEY_FILE=$HOME/.sops/key.txt
 ```
 
+* Create sops age secret in the cluster
+```
+kubectl -n flux-system create secret generic sops-age \
+  --from-file=age.agekey=$SOPS_AGE_KEY_FILE
+```
 
 * Flux bootstrap:
 
