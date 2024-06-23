@@ -4,3 +4,4 @@ resources:
   - ns.yaml
   - repo.yaml
   - hr.yaml
+  - ipaddressPool.yaml
