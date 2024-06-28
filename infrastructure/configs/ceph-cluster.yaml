@@ -32,10 +32,6 @@ spec:
       storage:
         useAllNodes: true
         userAllDevices: true
-      mgr:
-        modules:
-          - name: rook
-            enabled: true
     ingress:
       dashboard:
         ingressClassName: nginx

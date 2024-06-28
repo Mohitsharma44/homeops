@@ -26,4 +26,3 @@ spec:
     pspEnable: false
     monitoring:
       enabled: false
-    enableDiscoveryDaemon: true
