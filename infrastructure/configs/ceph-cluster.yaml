@@ -32,3 +32,17 @@ spec:
       storage:
         useAllNodes: true
         userAllDevices: true
+      mgr:
+        modules:
+          - name: rook
+            enabled: true
+    ingress:
+      dashboard:
+        ingressClassName: nginx
+        annotations:
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+          nginx.ingress.kubernetes.io/server-snippet: |
+            proxy_ssl_verify off;
+        host:
+          name: rook-ceph.sharmamohit.com
+          path: "/"
