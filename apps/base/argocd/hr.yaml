@@ -7,10 +7,10 @@ spec:
   releaseName: argocd
   chart:
     spec:
-      chart: argo-cd
+      chart: argocd
       sourceRef:
         kind: HelmRepository
-        name: argo-cd
+        name: argocd
   interval: 50m
   install:
     remediation:
