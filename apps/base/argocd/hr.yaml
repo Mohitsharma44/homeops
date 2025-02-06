@@ -1,0 +1,33 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  releaseName: argocd
+  chart:
+    spec:
+      chart: argo-cd
+      sourceRef:
+        kind: HelmRepository
+        name: argo-cd
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  # Default values
+  # https://github.com/argoproj/argo-helm/blob/main/charts/argo-cd/values.yaml
+  values:
+    global:
+      domain: argocd.sharmamohit.com
+    configs:
+      exec.enabled: true
+      statusbadge.enabled: true
+    server:
+      ingress: 
+        enabled: true
+        annotations:
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+        
