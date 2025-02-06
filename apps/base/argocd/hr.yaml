@@ -7,7 +7,7 @@ spec:
   releaseName: argocd
   chart:
     spec:
-      chart: argocd
+      chart: argo-cd
       sourceRef:
         kind: HelmRepository
         name: argo-helm
