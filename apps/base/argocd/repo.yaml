@@ -1,7 +1,7 @@
 apiVersion: source.toolkit.fluxcd.io/v1beta2
 kind: HelmRepository
 metadata:
-  name: argo
+  name: argo-helm
   namespace: argocd
 spec:
   interval: 5m
