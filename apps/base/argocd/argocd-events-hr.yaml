@@ -1,0 +1,20 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: argo-events
+  namespace: argocd
+spec:
+  releaseName: argo-events
+  chart:
+    spec:
+      chart: argo-events
+      sourceRef:
+        kind: HelmRepository
+        name: argo-helm
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  # Default values
+  # https://github.com/argoproj/argo-helm/blob/main/charts/argo-events/values.yaml
+  # values: 

@@ -4,4 +4,8 @@ namespace: argocd
 resources:
   - ns.yaml
   - repo.yaml
-  - hr.yaml
+  - argocd-hr.yaml
+  ## rollouts is currently disabled. For more info, refer the yaml file ##
+  # - argocd-rollouts-hr.yaml
+  ## events depend on argocd rollouts.
+  # - argocd-events-hr.yaml
