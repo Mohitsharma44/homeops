@@ -1,0 +1,51 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: argo-workflows
+  namespace: argocd
+spec:
+  releaseName: argo-workflows
+  chart:
+    spec:
+      chart: argo-workflows
+      sourceRef:
+        kind: HelmRepository
+        name: argo-helm
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  # Default values
+  # https://github.com/argoproj/argo-helm/blob/main/charts/argo-workflows/values.yaml
+  values: 
+    workflow:
+      serviceAccount:
+        create: true
+        name: "argo-workflow"
+      rbac:
+        create: true
+    server:
+      ingress:
+        enabled: true
+        annotations:
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+        hosts:
+          - argoworkflows.sharmamohit.com
+    artifactRepository:
+    # -- Setup artifactory config info before enabling this chart --- 
+      s3:
+        accessKeySecret:
+          name: "{{ .Release.Name }}-minio"
+          key: accesskey
+        secretKeySecret:
+          name: "{{ .Release.Name }}-minio"
+          key: secretkey
+        bucket: argo-workflow-artifacts
+        endpoint: https://minio.sharmamohit.com:9002
+        region: "canada-west"
+        encryptionOptions:
+          enableEncryption: false
+      # -- Setup artifactory config info before enabling this chart --- 
+    

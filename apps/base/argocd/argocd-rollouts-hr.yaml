@@ -1,0 +1,30 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta2
+kind: HelmRelease
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+spec:
+  releaseName: argo-rollouts
+  chart:
+    spec:
+      chart: argo-rollouts
+      sourceRef:
+        kind: HelmRepository
+        name: argo-helm
+  interval: 50m
+  install:
+    remediation:
+      retries: 3
+  # Default values
+  # https://github.com/argoproj/argo-helm/blob/main/charts/argo-rollouts/values.yaml
+  values: 
+    dashboard:
+      enabled: true
+      ingress:
+        enabled: true
+        annotations:
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+        hosts:
+          - argorollouts.sharmamohit.com
