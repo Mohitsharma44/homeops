@@ -75,7 +75,7 @@ flux bootstrap github --token-auth --owner=Mohitsharma44 --repository=homeops --
 
 ## HelmRelease Structure
 ```yaml
-apiVersion: helm.toolkit.fluxcd.io/v2beta1
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: <name>

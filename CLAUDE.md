@@ -150,8 +150,6 @@ Domain: sharmamohit.com (wildcard cert)
 
 5. **cert-manager needs AWS creds**: Route53 DNS01 validation requires the encrypted secret in `infrastructure/controllers/certmanager/secret.yaml`.
 
-6. **Legacy podinfo overlay**: `apps/minipcs/podinfo/` and `apps/base/podinfo/` exist but are NOT deployed (podinfo is now ArgoCD-managed via `apps/argocd-apps/apps/podinfo.yaml`).
-
 ## Useful Commands for User
 
 ```bash
