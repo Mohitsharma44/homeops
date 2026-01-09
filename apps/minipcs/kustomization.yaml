@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # ArgoCD itself (deployed by Flux)
+  - argocd
+  # App-of-Apps root application (deploys ArgoCD Applications)
+  - ../argocd-apps
+  # NOTE: podinfo is now managed by ArgoCD via App-of-Apps pattern
+  # Do not add it here - see apps/argocd-apps/apps/podinfo.yaml
