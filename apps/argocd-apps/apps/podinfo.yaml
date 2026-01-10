@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://stefanprodan.github.io/podinfo
     chart: podinfo
-    targetRevision: "*"  # Latest version
+    targetRevision: ">=6.0.0"  # Use a constrained version range instead of wildcard
     helm:
       valuesObject:
         redis:
