@@ -16,6 +16,9 @@ spec:
         namespace: metallb-system
       interval: 12h
   values:
+    speaker:
+      frr:
+        enabled: false
     prometheus:
       serviceMonitor:
         enabled: false
