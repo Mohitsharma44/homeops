@@ -59,7 +59,13 @@ Domain: *.sharmamohit.com (wildcard cert via Let's Encrypt + Route53)
 ```bash
 kubectl create namespace flux-system
 kubectl -n flux-system create secret generic sops-age --from-file=age.agekey=$HOME/.sops/key.txt
-flux bootstrap github --token-auth --owner=Mohitsharma44 --repository=homeops --branch=main --path=clusters/minipcs --personal
+kubectl -n flux-system create secret generic flux-system \
+  --from-literal=githubAppID=<app-id> \
+  --from-literal=githubAppInstallationID=<installation-id> \
+  --from-file=githubAppPrivateKey=<path-to-private-key.pem>
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system
+kubectl apply -f clusters/minipcs/flux-instance.yaml
 ```
 
 ## File Patterns

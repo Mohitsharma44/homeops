@@ -10,14 +10,15 @@ Flux (Infrastructure) → ArgoCD (Applications)
 
 **Deployment Order (via Flux Kustomization dependencies):**
 ```
-flux-system → infra-controllers → infra-configs → apps (ArgoCD)
+flux-operator → flux-instance → infra-controllers → infra-configs → apps (ArgoCD)
 ```
 
 ## Directory Structure
 
 ```
 ├── clusters/minipcs/           # Cluster entry point
-│   ├── flux-system/            # Flux bootstrap (auto-generated)
+│   ├── flux-instance.yaml      # FluxInstance CRD (Flux Operator manages controllers)
+│   ├── kustomization.yaml      # Aggregates flux-instance, infrastructure, apps
 │   ├── infrastructure.yaml     # Triggers infra-controllers + infra-configs
 │   └── apps.yaml               # Triggers apps deployment (ArgoCD + root-app)
 ├── infrastructure/
@@ -113,37 +114,63 @@ sops -d path/to/secret.yaml
 
 ### Prerequisites
 - Kubernetes cluster accessible via kubectl
+- [Helm](https://helm.sh/docs/intro/install/) installed
 - age key at `~/.sops/key.txt`
-- GitHub token with repo access
+- GitHub App for Flux (see setup below)
+
+### Create the GitHub App
+
+1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**
+2. Fill in:
+   - **Name**: anything (e.g. `flux-homeops`)
+   - **Homepage URL**: `https://github.com/Mohitsharma44/homeops`
+   - **Webhook**: uncheck "Active"
+   - **Repository permissions → Contents**: Read-only
+   - **Where can this app be installed**: Only on this account
+3. Click **Create GitHub App** — note the **App ID** from the app settings page
+4. Scroll to **Private keys** → **Generate a private key** (saves a `.pem` file)
+5. Click **Install App** → select **Only select repositories** → pick `homeops`
+6. Note the **Installation ID** from the URL: `https://github.com/settings/installations/<id>`
+
+You'll need three values for the bootstrap: **App ID**, **Installation ID**, and the **private key `.pem` file**.
 
 ### Steps
 
 ```bash
-# 1. Set environment variables
-export GITHUB_TOKEN=<fine-grained-token>
-export GITHUB_USER=Mohitsharma44
-export GITHUB_REPO=homeops
-export SOPS_AGE_KEY_FILE=$HOME/.sops/key.txt
+# 1. Create the flux-system namespace
+kubectl create namespace flux-system
 
 # 2. Create the SOPS decryption secret (Flux needs this to decrypt secrets)
-kubectl create namespace flux-system
 kubectl -n flux-system create secret generic sops-age \
-  --from-file=age.agekey=$SOPS_AGE_KEY_FILE
+  --from-file=age.agekey=$HOME/.sops/key.txt
 
-# 3. Bootstrap Flux
-flux bootstrap github \
-  --token-auth \
-  --owner=Mohitsharma44 \
-  --repository=homeops \
-  --branch=main \
-  --path=clusters/minipcs \
-  --personal
+# 3. Create the GitHub App secret (used by source-controller to pull the repo)
+kubectl -n flux-system create secret generic flux-system \
+  --from-literal=githubAppID=<app-id> \
+  --from-literal=githubAppInstallationID=<installation-id> \
+  --from-file=githubAppPrivateKey=<path-to-private-key.pem>
 
-# 4. Watch reconciliation
+# 4. Install the Flux Operator via Helm
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system
+
+# 5. Apply the FluxInstance to start GitOps reconciliation
+kubectl apply -f clusters/minipcs/flux-instance.yaml
+
+# 6. Watch reconciliation
+kubectl -n flux-system get fluxinstance flux -w
 flux get kustomizations --watch
 ```
 
-### Post-Bootstrap
+### Post-Bootstrap Verification
+
+```bash
+kubectl -n flux-system get deploy                # 4 controllers + flux-operator
+kubectl -n flux-system get fluxinstance flux      # Ready: True
+kubectl -n flux-system get gitrepository flux-system  # Ready: True
+flux get kustomizations                          # All 3 Ready
+flux get helmreleases -A                         # All Ready
+```
 
 After Flux reconciles, ArgoCD will be available at `argocd.sharmamohit.com`.
 
@@ -185,6 +212,12 @@ ceph osd status
 **Force reconciliation:**
 ```bash
 flux reconcile kustomization flux-system --with-source
+```
+
+**Check Flux Operator / FluxInstance status:**
+```bash
+kubectl -n flux-system get fluxinstance flux
+kubectl -n flux-system describe fluxinstance flux
 ```
 
 **Check Flux status:**
@@ -232,6 +265,7 @@ age-keygen -o ~/.sops/key.txt
 
 **Flux not reconciling:**
 ```bash
+kubectl -n flux-system get fluxinstance flux        # Check operator status
 kubectl get gitrepository -n flux-system
 kubectl describe kustomization flux-system -n flux-system
 ```
