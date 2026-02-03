@@ -1,22 +1,25 @@
-apiVersion: helm.toolkit.fluxcd.io/v2beta1
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: rook-ceph-cluster
   namespace: rook-ceph
 spec:
+  interval: 30m
   chart:
     spec:
       chart: rook-ceph-cluster
-      version: 1.9.x
+      version: "1.16.x"
       sourceRef:
         kind: HelmRepository
         name: rook-release
         namespace: flux-system
-  interval: 30m
+      interval: 12h
   timeout: 10m
   install:
     remediation:
       retries: 3
+    crds: CreateReplace
   upgrade:
     remediation:
       retries: -1 # keep trying to remediate
@@ -31,7 +34,7 @@ spec:
     cephClusterSpec:
       storage:
         useAllNodes: true
-        userAllDevices: true
+        useAllDevices: true
     ingress:
       dashboard:
         ingressClassName: nginx
