@@ -16,7 +16,8 @@ Deployment dependency chain defined in `clusters/minipcs/`:
 
 ```
 clusters/minipcs/          # START HERE - cluster entry point
-├── flux-system/           # Auto-generated, don't edit manually
+├── flux-instance.yaml     # FluxInstance CRD (operator manages Flux controllers)
+├── kustomization.yaml     # Aggregates flux-instance, infrastructure, apps
 ├── infrastructure.yaml    # Defines infra Kustomizations
 └── apps.yaml              # Defines apps Kustomization
 
@@ -34,10 +35,11 @@ apps/
 ```
 
 ## Key Files to Read First
-1. `clusters/minipcs/infrastructure.yaml` - Understand the Flux Kustomization structure
-2. `infrastructure/controllers/kustomization.yaml` - See what controllers are deployed
-3. `.sops.yaml` - SOPS encryption configuration
-4. Any `hr.yaml` file - Standard HelmRelease pattern used throughout
+1. `clusters/minipcs/flux-instance.yaml` - FluxInstance CRD (how Flux is deployed and configured)
+2. `clusters/minipcs/infrastructure.yaml` - Understand the Flux Kustomization structure
+3. `infrastructure/controllers/kustomization.yaml` - See what controllers are deployed
+4. `.sops.yaml` - SOPS encryption configuration
+5. Any `hr.yaml` file - Standard HelmRelease pattern used throughout
 
 ## Secrets Handling
 
@@ -150,9 +152,17 @@ Domain: sharmamohit.com (wildcard cert)
 
 5. **cert-manager needs AWS creds**: Route53 DNS01 validation requires the encrypted secret in `infrastructure/controllers/certmanager/secret.yaml`.
 
+6. **Flux Operator manages controllers**: The Flux Operator deploys Flux controllers via the `FluxInstance` CRD. Do not add `gotk-components.yaml` or manually create Flux controller deployments — the operator handles this. To upgrade Flux, bump the `version` in `flux-instance.yaml`.
+
+7. **GitHub App auth**: Source-controller authenticates to GitHub using a GitHub App (secret `flux-system` in `flux-system` namespace), not a PAT.
+
 ## Useful Commands for User
 
 ```bash
+# Flux Operator / FluxInstance status
+kubectl -n flux-system get fluxinstance flux
+kubectl -n flux-system describe fluxinstance flux
+
 # Flux status
 flux get all
 flux get kustomizations
