@@ -5,5 +5,3 @@ resources:
   - secret.yaml
   - repo.yaml
   - hr.yaml
-  - cluster-issuer.yaml
-  - default-tls-cert.yaml
