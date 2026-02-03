@@ -1,4 +1,4 @@
-apiVersion: helm.toolkit.fluxcd.io/v2beta2
+apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: argo-events
@@ -8,6 +8,7 @@ spec:
   chart:
     spec:
       chart: argo-events
+      version: "2.x"
       sourceRef:
         kind: HelmRepository
         name: argo-helm

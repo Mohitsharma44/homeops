@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: podinfo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://stefanprodan.github.io/podinfo
+    chart: podinfo
+    targetRevision: ">=6.0.0"  # Use a constrained version range instead of wildcard
+    helm:
+      valuesObject:
+        redis:
+          enabled: true
+          repository: public.ecr.aws/docker/library/redis
+          tag: 7.0.6
+        ingress:
+          enabled: true
+          className: nginx
+          hosts:
+            - host: podinfo.sharmamohit.com
+              paths:
+                - path: /
+                  pathType: ImplementationSpecific
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: podinfo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

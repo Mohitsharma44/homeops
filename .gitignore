@@ -1,0 +1,17 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Decrypted secrets (should never be committed)
+*.dec.yaml
+*.decrypted.yaml
+
+# Temporary files
+*.tmp
+*.bak
