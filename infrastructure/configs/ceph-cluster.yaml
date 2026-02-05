@@ -35,6 +35,36 @@ spec:
       storage:
         useAllNodes: true
         useAllDevices: true
+    cephObjectStores:
+      - name: ceph-objectstore
+        spec:
+          metadataPool:
+            failureDomain: host
+            replicated:
+              size: 3
+          dataPool:
+            failureDomain: host
+            erasureCoded:
+              dataChunks: 2
+              codingChunks: 1
+            parameters:
+              bulk: "true"
+              pg_num: "64"
+          preservePoolsOnDelete: true
+          gateway:
+            port: 80
+            instances: 1
+            priorityClassName: system-cluster-critical
+            resources:
+              requests:
+                cpu: "1"
+                memory: 1Gi
+              limits:
+                memory: 2Gi
+        storageClass:
+          enabled: true
+          name: ceph-bucket
+          reclaimPolicy: Delete
     ingress:
       dashboard:
         ingressClassName: nginx
