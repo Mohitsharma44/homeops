@@ -1,0 +1,79 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: thanos
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: thanos
+    targetRevision: "17.x"
+    helm:
+      valuesObject:
+        existingObjstoreSecret: thanos-objstore-secret
+        query:
+          enabled: true
+          dnsDiscovery:
+            enabled: true
+            sidecarsService: "kube-prometheus-stack-thanos-discovery"
+            sidecarsNamespace: "monitoring"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        storegateway:
+          enabled: true
+          persistence:
+            enabled: true
+            storageClass: ceph-block
+            size: 10Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+        compactor:
+          enabled: true
+          retentionResolutionRaw: 7d
+          retentionResolution5m: 30d
+          retentionResolution1h: 180d
+          persistence:
+            enabled: true
+            storageClass: ceph-block
+            size: 10Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+        queryFrontend:
+          enabled: false
+        ruler:
+          enabled: false
+        receive:
+          enabled: false
+        bucketweb:
+          enabled: false
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true
