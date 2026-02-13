@@ -57,9 +57,9 @@ spec:
       metrics:
         enabled: true
         serviceMonitor:
-          enabled: true
+          enabled: false
         prometheusRule:
-          enabled: true
+          enabled: false
           rules:
             # These are just some sample rules
             - alert: NGINXConfigFailed

@@ -16,10 +16,6 @@ spec:
         namespace: cert-manager
       interval: 12h
   values:
-    prometheus:
-      enabled: true
-      servicemonitor:
-        enabled: true
     installCRDs: true
     replicaCount: 3
     extraArgs:
