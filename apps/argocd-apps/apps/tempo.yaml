@@ -24,6 +24,7 @@ spec:
                 endpoint: seaweedfs.sharmamohit.com:8333
                 insecure: true
                 forcepathstyle: true
+                region: us-east-1
           receivers:
             otlp:
               protocols:
