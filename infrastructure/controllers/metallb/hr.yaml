@@ -22,6 +22,6 @@ spec:
       ignoreExcludeLB: true
     prometheus:
       serviceMonitor:
-        enabled: false
+        enabled: true
       prometheusRule:
-        enabled: false
+        enabled: true

@@ -55,11 +55,11 @@ spec:
       admissionWebhooks:
         enabled: false
       metrics:
-        enabled: false
+        enabled: true
         serviceMonitor:
-          enabled: false
+          enabled: true
         prometheusRule:
-          enabled: false
+          enabled: true
           rules:
             # These are just some sample rules
             - alert: NGINXConfigFailed

@@ -29,8 +29,8 @@ spec:
     toolbox:
       enabled: true
     monitoring:
-      enabled: false
-      createPrometheusRules: false
+      enabled: true
+      createPrometheusRules: true
     cephClusterSpec:
       storage:
         useAllNodes: true
