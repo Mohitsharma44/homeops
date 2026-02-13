@@ -17,29 +17,44 @@ Full metrics/logs/traces observability stack deployed in the `monitoring` namesp
 ## Architecture
 
 ```
-                          ┌─────────────────────────────────────────┐
-                          │              Grafana                     │
-                          │     grafana.sharmamohit.com              │
-                          │  Datasources: Thanos, Loki, Tempo       │
-                          └──────┬──────────┬──────────┬────────────┘
-                                 │          │          │
-                    ┌────────────▼┐   ┌─────▼───┐  ┌──▼───┐
-                    │ Thanos Query│   │  Loki   │  │Tempo │
-                    └──────┬──────┘   │ Single  │  │Mono  │
-                           │          │ Binary  │  │lithic│
-              ┌────────────┼───┐      └────┬────┘  └──┬───┘
-              │            │   │           │          │
-    ┌─────────▼──┐  ┌──────▼─┐ │     ┌─────▼────┐  ┌─▼──────────┐
-    │Store       │  │Thanos  │ │     │SeaweedFS │  │ SeaweedFS  │
-    │Gateway     │  │Sidecar │ │     │loki-*    │  │tempo-traces│
-    └─────┬──────┘  └────────┘ │     └──────────┘  └────────────┘
-          │                    │
-    ┌─────▼──────────┐  ┌─────▼────┐
-    │  SeaweedFS     │  │Compactor │
-    │  thanos-metrics│  └──────────┘
-    └────────────────┘
-
-    Alloy DaemonSet ──→ Logs to Loki, Traces to Tempo
+┌─ K8s Cluster (minipcs) ─────────────────────────────────────────────────────┐
+│                                                                             │
+│  ┌─────────────────────────────────────────┐                                │
+│  │              Grafana                     │                                │
+│  │     grafana.sharmamohit.com              │                                │
+│  │  Datasources: Thanos, Loki, Tempo       │                                │
+│  └──────┬──────────┬──────────┬────────────┘                                │
+│         │          │          │                                              │
+│  ┌──────▼──────┐ ┌─▼──────┐ ┌▼──────┐                                      │
+│  │Thanos Query │ │  Loki  │ │ Tempo │                                       │
+│  └──────┬──────┘ │ Single │ │ Mono  │                                       │
+│         │        │ Binary │ │lithic │                                       │
+│   ┌─────┼────┐   └───┬────┘ └──┬────┘                                      │
+│   │     │    │       │         │                                            │
+│ ┌─▼───┐ │ ┌─▼──────┐│         │      Alloy DaemonSet                      │
+│ │Store│ │ │Compactor││         │        ├─ Logs  → Loki                    │
+│ │GW   │ │ └────────┘│         │        └─ Traces → Tempo                   │
+│ └──┬──┘ │           │         │                                             │
+│    │  ┌─▼──────┐    │         │                                             │
+│    │  │Thanos  │    │         │                                             │
+│    │  │Sidecar │    │         │                                             │
+│    │  └────────┘    │         │                                             │
+│    │                │         │                                             │
+│    │   S3 (HTTP)    │         │                                             │
+└────┼────────────────┼─────────┼─────────────────────────────────────────────┘
+     │                │         │
+─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─│─ ─ ─  LAN (192.168.11.0/24) ─ ─ ─ ─ ─ ─ ─
+     │                │         │
+┌────▼────────────────▼─────────▼─────────────────────────────────────────────┐
+│  TrueNAS (VM) ── SeaweedFS S3  ──  seaweedfs.sharmamohit.com:8333          │
+│                                                                             │
+│  ┌──────────────┐  ┌──────────┐  ┌───────────┐  ┌───────────────┐          │
+│  │thanos-metrics│  │loki-chunks│  │loki-ruler │  │ tempo-traces  │          │
+│  └──────────────┘  └──────────┘  └───────────┘  └───────────────┘          │
+│                                                                             │
+│  IAM Identity: observability (Read/Write/List)                              │
+│  Storage: HDD-backed (long-term cold storage)                               │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Endpoints
@@ -57,6 +72,9 @@ Full metrics/logs/traces observability stack deployed in the `monitoring` namesp
 
 ## S3 Backend (SeaweedFS on TrueNAS)
 
+SeaweedFS runs inside a VM on TrueNAS, providing S3-compatible object storage over the LAN for long-term observability data.
+
+- **Host**: TrueNAS (VM running SeaweedFS)
 - **Endpoint**: http://seaweedfs.sharmamohit.com:8333
 - **IAM Identity**: observability (Read/Write/List)
 - **Buckets**: thanos-metrics, loki-chunks, loki-ruler, tempo-traces
