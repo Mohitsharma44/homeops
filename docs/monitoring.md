@@ -14,6 +14,93 @@ Full metrics/logs/traces observability stack deployed in the `monitoring` namesp
 | Tempo | grafana/tempo | 1.x | Distributed tracing (monolithic mode) |
 | Alloy | grafana/alloy | 1.x | Log collection + trace forwarding (DaemonSet) |
 
+## How It Works
+
+Three data pipelines — **metrics**, **logs**, and **traces** — all converge in Grafana.
+
+### Metrics Pipeline
+
+Prometheus scrapes `/metrics` endpoints from pods, node-exporters, and kube-state-metrics every 30s. It stores 3 days of raw data on a local NVMe PVC. The Thanos Sidecar watches Prometheus's TSDB and uploads completed 2-hour blocks to SeaweedFS S3.
+
+For queries, Thanos Query federates two sources: the Sidecar (recent data) and the Store Gateway (old data from S3), deduplicating overlapping blocks and presenting a single Prometheus-compatible API. The Compactor runs in the background downsampling old data (5-minute resolution for 30 days, 1-hour resolution for 180 days) to keep long-range queries fast.
+
+```
+Pods/Exporters
+  │  scrape /metrics (pull)
+  ▼
+Prometheus (3d on NVMe)
+  │
+  ├─ Thanos Sidecar ──uploads──→ SeaweedFS S3 (thanos-metrics)
+  │                                  │
+  │                     ┌────────────┼───────────┐
+  │                     ▼            ▼           │
+  │              Store Gateway    Compactor       │
+  │              (serves old      (downsample     │
+  │               blocks)          + compact)     │
+  │                     │                         │
+  └──────┐              │                         │
+         ▼              ▼                         │
+       Thanos Query ◄───┘                         │
+         ▲  (federates sidecar + store gateway,   │
+         │   deduplicates, single PromQL API)     │
+       Grafana                                    │
+```
+
+### Logs Pipeline
+
+Alloy runs as a DaemonSet on every node. It discovers pods via the Kubernetes API, reads their stdout/stderr logs, enriches them with labels (namespace, pod, container, node, app), and pushes to Loki with `tenant_id = "homelab"`.
+
+Loki runs in SingleBinary mode — one pod handling ingestion, storage, and queries. It writes a local WAL to NVMe, then flushes chunks to SeaweedFS S3. Retention is 30 days.
+
+```
+Pods (stdout/stderr)
+  │
+  ▼
+Alloy DaemonSet (every node)
+  │  discovers pods, reads logs, adds labels
+  │  POST /loki/api/v1/push  (X-Scope-OrgID: homelab)
+  ▼
+Loki SingleBinary (WAL on NVMe)
+  │  flushes chunks
+  ▼
+SeaweedFS S3 (loki-chunks)
+  ▲
+  │  LogQL queries
+Grafana
+```
+
+### Traces Pipeline
+
+Traces are opt-in. Applications instrumented with OpenTelemetry send OTLP data to Alloy, which forwards it to Tempo. Alloy listens on `:4317` (gRPC) and `:4318` (HTTP) for any app that emits traces.
+
+Tempo stores trace data in a local WAL, then flushes to SeaweedFS S3. Retention is 7 days.
+
+```
+Apps (OpenTelemetry instrumented)
+  │  OTLP gRPC (:4317) or HTTP (:4318)
+  ▼
+Alloy DaemonSet
+  │  forwards via OTLP gRPC
+  ▼
+Tempo Monolithic (WAL on NVMe)
+  │  flushes traces
+  ▼
+SeaweedFS S3 (tempo-traces)
+  ▲
+  │  TraceQL queries
+Grafana
+```
+
+### Key Differences
+
+| | Metrics | Logs | Traces |
+|---|---------|------|--------|
+| **Collection** | Pull (Prometheus scrapes) | Push (Alloy ships) | Push (apps emit OTLP) |
+| **Query language** | PromQL | LogQL | TraceQL |
+| **Retention** | 180 days (downsampled) | 30 days | 7 days |
+| **Hot storage** | Prometheus PVC (3d) | Loki WAL | Tempo WAL |
+| **Cold storage** | thanos-metrics bucket | loki-chunks bucket | tempo-traces bucket |
+
 ## Architecture
 
 ```
