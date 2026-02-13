@@ -28,4 +28,4 @@ spec:
   values:
     # PSP removed in Kubernetes 1.25+ and rook-ceph 1.10+
     monitoring:
-      enabled: false
+      enabled: true
