@@ -20,8 +20,3 @@ spec:
       frr:
         enabled: false
       ignoreExcludeLB: true
-    prometheus:
-      serviceMonitor:
-        enabled: false
-      prometheusRule:
-        enabled: false
