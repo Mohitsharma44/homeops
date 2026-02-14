@@ -62,7 +62,9 @@ spec:
               limits:
                 memory: 2Gi
         storageClass:
-          enabled: false
+          enabled: true
+          name: ceph-bucket
+          reclaimPolicy: Delete
     ingress:
       dashboard:
         ingressClassName: nginx
