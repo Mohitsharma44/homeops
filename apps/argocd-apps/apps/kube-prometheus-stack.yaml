@@ -17,6 +17,7 @@ spec:
       valuesObject:
         prometheus:
           prometheusSpec:
+            enableRemoteWriteReceiver: true
             retention: 3d
             retentionSize: 15GB
             storageSpec:
