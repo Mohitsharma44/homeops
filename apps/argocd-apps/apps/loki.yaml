@@ -43,6 +43,7 @@ spec:
             retention_period: 720h
           compactor:
             retention_enabled: true
+            delete_request_store: s3
         singleBinary:
           replicas: 1
           persistence:

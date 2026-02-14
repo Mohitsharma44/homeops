@@ -32,32 +32,30 @@ spec:
                   endpoint: "0.0.0.0:4317"
                 http:
                   endpoint: "0.0.0.0:4318"
-          compactor:
-            compaction:
-              block_retention: 168h
+          retention: 168h
           resources:
             requests:
               cpu: 100m
               memory: 256Mi
             limits:
               memory: 512Mi
+          extraEnv:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-secret
+                  key: aws-access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-secret
+                  key: aws-secret-access-key
         persistence:
           enabled: true
           storageClassName: ceph-block
           size: 10Gi
         serviceMonitor:
           enabled: true
-        extraEnv:
-          - name: AWS_ACCESS_KEY_ID
-            valueFrom:
-              secretKeyRef:
-                name: seaweedfs-s3-secret
-                key: aws-access-key-id
-          - name: AWS_SECRET_ACCESS_KEY
-            valueFrom:
-              secretKeyRef:
-                name: seaweedfs-s3-secret
-                key: aws-secret-access-key
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
