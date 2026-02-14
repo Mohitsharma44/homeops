@@ -16,6 +16,15 @@ spec:
     targetRevision: "17.x"
     helm:
       valuesObject:
+        # Bitnami removed free images from Docker Hub (Aug 2025)
+        # Use official Thanos image instead
+        global:
+          security:
+            allowInsecureImages: true
+        image:
+          registry: quay.io
+          repository: thanos/thanos
+          tag: v0.41.0
         existingObjstoreSecret: thanos-objstore-secret
         query:
           enabled: true
