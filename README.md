@@ -202,7 +202,7 @@ Ingress LB:   192.168.11.90
 
 ## Rook-Ceph Storage
 
-Distributed storage (block, filesystem, object) via Rook-Ceph.
+Distributed storage (block, filesystem, object) via Rook-Ceph. See [docs/ceph.md](docs/ceph.md) for deployment structure, StorageClasses, object store config, and common operations.
 
 Split into three parts: Rook operator (Helm), CephCluster (Helm), and storage resources (standalone manifests in `infrastructure/configs/ceph/`). Standalone manifests avoid Helm upgrade failures from immutable StorageClass fields.
 
