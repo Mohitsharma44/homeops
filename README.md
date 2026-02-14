@@ -23,13 +23,20 @@ flux-operator → flux-instance → infra-controllers → infra-configs → apps
 │   └── apps.yaml               # Triggers apps deployment (ArgoCD + root-app)
 ├── infrastructure/
 │   ├── controllers/            # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
-│   └── configs/                # Post-controller configs (ceph-cluster)
+│   └── configs/                # Post-controller configs (ceph-cluster, monitoring namespace)
+│       └── ceph/               # Standalone Ceph resource manifests (pools, filesystems, objectstore)
 └── apps/
     ├── base/argocd/            # ArgoCD itself (deployed by Flux)
     ├── argocd-apps/            # App-of-Apps pattern
     │   ├── root-app.yaml       # Root Application (watches apps/ directory)
-    │   └── apps/               # ArgoCD Application manifests
-    │       └── podinfo.yaml    # Example app managed by ArgoCD
+    │   └── apps/               # ArgoCD Application + AppProject manifests
+    │       ├── project-monitoring.yaml  # AppProject for observability stack
+    │       ├── kube-prometheus-stack.yaml
+    │       ├── thanos.yaml
+    │       ├── loki.yaml
+    │       ├── tempo.yaml
+    │       ├── alloy.yaml
+    │       └── podinfo.yaml    # Example app
     └── minipcs/                # Cluster-specific Flux overlay
 ```
 
@@ -43,40 +50,26 @@ Flux deploys:
 └── root-app.yaml (ArgoCD Application)
         │
         └── Watches: apps/argocd-apps/apps/
-                     ├── podinfo.yaml    → deploys podinfo
-                     └── future-app.yaml → add more apps here
+                     ├── project-monitoring.yaml → AppProject definition
+                     ├── kube-prometheus-stack.yaml → project: monitoring
+                     ├── thanos.yaml               → project: monitoring
+                     ├── loki.yaml                  → project: monitoring
+                     ├── tempo.yaml                 → project: monitoring
+                     ├── alloy.yaml                 → project: monitoring
+                     └── podinfo.yaml               → project: default
 ```
+
+**ArgoCD Projects:**
+
+| Project | Apps | Scope |
+|---------|------|-------|
+| **monitoring** | kube-prometheus-stack, thanos, loki, tempo, alloy | `monitoring` + `kube-system` namespaces |
+| **default** | root-app, podinfo | Unrestricted |
 
 **To add a new application:**
 1. Create an ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
-2. Commit and push - ArgoCD auto-syncs
-
-**Example Application manifest:**
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: https://charts.example.com
-    chart: my-chart
-    targetRevision: "1.0.0"
-    helm:
-      valuesObject:
-        key: value
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: my-app
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-```
+2. Set `project:` to the appropriate AppProject (or `default`)
+3. Commit and push - ArgoCD auto-syncs
 
 ## Infrastructure Components
 
@@ -87,6 +80,20 @@ spec:
 | **Cert-Manager** | TLS certificates | Let's Encrypt via Route53 DNS01 |
 | **Rook-Ceph** | Distributed storage | Uses all nodes/devices |
 | **ArgoCD** | Application delivery | `argocd.sharmamohit.com` |
+
+## Observability Stack
+
+Metrics, logs, and traces via ArgoCD (`monitoring` project). See [docs/monitoring.md](docs/monitoring.md) for full architecture, data flow, retention policies, and endpoints.
+
+| Component | Role |
+|-----------|------|
+| **kube-prometheus-stack** | Prometheus, Grafana, Alertmanager, node-exporter |
+| **Thanos** | Long-term metrics (query, store gateway, compactor) |
+| **Loki** | Log aggregation |
+| **Tempo** | Distributed tracing |
+| **Alloy** | Log/trace collection (DaemonSet) |
+
+**Access:** `grafana.sharmamohit.com` | **S3 backend:** SeaweedFS on TrueNAS
 
 ## Secrets Management (SOPS + age)
 
@@ -189,23 +196,23 @@ Ingress LB:   192.168.11.90
 
 **Domains (wildcard cert: `*.sharmamohit.com`):**
 - `argocd.sharmamohit.com` - ArgoCD UI
-- `podinfo.sharmamohit.com` - Test app
+- `grafana.sharmamohit.com` - Grafana dashboards
 - `rook-ceph.sharmamohit.com` - Ceph dashboard
+- `podinfo.sharmamohit.com` - Test app
 
 ## Rook-Ceph Storage
 
-Deployed via HelmRelease in two parts:
-1. `rook-ceph` operator (in `infrastructure/controllers/rook-ceph/`)
-2. `ceph-cluster` config (in `infrastructure/configs/`)
+Distributed storage (block, filesystem, object) via Rook-Ceph.
 
-**Config:** Uses all nodes and all devices (`useAllNodes: true`, `useAllDevices: true`)
+Split into three parts: Rook operator (Helm), CephCluster (Helm), and storage resources (standalone manifests in `infrastructure/configs/ceph/`). Standalone manifests avoid Helm upgrade failures from immutable StorageClass fields.
 
-**Access toolbox:**
-```bash
-kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- bash
-ceph status
-ceph osd status
-```
+| StorageClass | Type | Replication |
+|-------------|------|-------------|
+| `ceph-block` (default) | RBD block | 3x replicated |
+| `ceph-filesystem` | CephFS shared | 3x replicated |
+| `ceph-bucket` | RGW S3 object | Erasure coded (2+1) |
+
+**Dashboard:** `rook-ceph.sharmamohit.com`
 
 ## Common Operations
 
@@ -247,10 +254,10 @@ kubectl describe helmrelease <name> -n <namespace>
 
 ## Adding New Apps (via ArgoCD)
 
-1. Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
-2. Commit and push - ArgoCD auto-syncs via root-app
-
-See the "App-of-Apps Pattern" section above for the manifest template.
+1. Create an AppProject if needed (or use an existing one like `monitoring` or `default`)
+2. Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
+3. Set `project:` to the appropriate AppProject
+4. Commit and push - ArgoCD auto-syncs via root-app
 
 ## Generating a New age Key (if lost)
 
