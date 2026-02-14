@@ -10,7 +10,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://charts.bitnami.com/bitnami
+    # Bitnami migrated to OCI-only; legacy HTTP repo no longer serves charts
+    repoURL: registry-1.docker.io/bitnamicharts
     chart: thanos
     targetRevision: "17.x"
     helm:
