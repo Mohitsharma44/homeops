@@ -136,6 +136,17 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+  # ArgoCD v2.14 doesn't recognize .status.terminatingReplicas added in K8s 1.31+
+  # Remove once ArgoCD is upgraded to a version with updated schemas
+  ignoreDifferences:
+    - group: apps
+      kind: DaemonSet
+      jqPathExpressions:
+        - .status.terminatingReplicas
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .status.terminatingReplicas
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
@@ -146,3 +157,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true

@@ -20,3 +20,11 @@ spec:
       frr:
         enabled: false
       ignoreExcludeLB: true
+    prometheus:
+      rbacPrometheus: true
+      serviceAccount: kube-prometheus-stack-prometheus
+      namespace: monitoring
+      serviceMonitor:
+        enabled: true
+      prometheusRule:
+        enabled: true
