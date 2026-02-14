@@ -157,6 +157,33 @@ Grafana
 | Tempo OTLP HTTP | http://tempo.monitoring.svc:4318 |
 | Alertmanager | http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 |
 
+## External Write Endpoints
+
+Authenticated Ingress endpoints allow external Docker hosts to push metrics and logs into the K8s observability stack. Both use basic auth (`monitoring-basic-auth` secret) and `pathType: Exact` to restrict access to write-only paths — no query endpoints are exposed.
+
+| Endpoint | URL | Backend | Purpose |
+|----------|-----|---------|---------|
+| Prometheus remote-write | `https://prometheus.sharmamohit.com/api/v1/write` | prometheus:9090 | Metrics ingestion from Docker Alloy |
+| Loki push | `https://loki.sharmamohit.com/loki/api/v1/push` | loki:3100 | Log ingestion from Docker Alloy |
+
+**Prometheus remote-write receiver**: Enabled via `enableRemoteWriteReceiver: true` in kube-prometheus-stack, which passes the `--web.enable-remote-write-receiver` flag to Prometheus.
+
+**Ingress annotations** (both):
+- `auth-type: basic` + `auth-secret: monitoring-basic-auth`
+- `proxy-body-size: 10m` (accommodate metric/log batches)
+- `proxy-read-timeout: 300` (allow slow remote-write flushes)
+- No TLS section — wildcard cert handled by ingress-nginx `default-ssl-certificate`
+
+**Verification**:
+```bash
+# Prometheus remote-write accepts POSTs (400 = active, not 405)
+curl -u alloy:<password> -X POST https://prometheus.sharmamohit.com/api/v1/write
+# Loki push (expect 400 or 204, not 401)
+curl -u alloy:<password> -H "X-Scope-OrgID: homelab" -X POST https://loki.sharmamohit.com/loki/api/v1/push
+# Auth blocks unauthenticated (expect 401)
+curl -X POST https://prometheus.sharmamohit.com/api/v1/write
+```
+
 ## S3 Backend (SeaweedFS on TrueNAS)
 
 SeaweedFS runs inside a VM on TrueNAS, providing S3-compatible object storage over the LAN for long-term observability data.
@@ -168,12 +195,13 @@ SeaweedFS runs inside a VM on TrueNAS, providing S3-compatible object storage ov
 
 ## Secrets
 
-Two SOPS-encrypted secrets in `infrastructure/configs/`:
+SOPS-encrypted secrets in `infrastructure/configs/`:
 
 | Secret | Namespace | Keys | Used By |
 |--------|-----------|------|---------|
 | `seaweedfs-s3-secret` | monitoring | `aws-access-key-id`, `aws-secret-access-key` | Loki, Tempo (via env vars) |
 | `thanos-objstore-secret` | monitoring | `objstore.yml` | Prometheus Thanos sidecar, Thanos components |
+| `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | Ingress basic auth for external write endpoints |
 
 **Credential rotation note**: Both secrets contain the same SeaweedFS observability IAM credentials. When rotating credentials, update **both** `seaweedfs-s3-secret` and `thanos-objstore-secret`, then re-encrypt with SOPS.
 
