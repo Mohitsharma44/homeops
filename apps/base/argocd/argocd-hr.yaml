@@ -22,8 +22,13 @@ spec:
     global:
       domain: argocd.sharmamohit.com
     configs:
-      exec.enabled: true
-      statusbadge.enabled: true
+      cm:
+        exec.enabled: "true"
+        statusbadge.enabled: "true"
+        # Skip status fields during resource comparison to avoid schema mismatches
+        # between K8s API version and ArgoCD's internal schemas
+        resource.compareoptions: |
+          ignoreResourceStatusField: all
     server:
       ingress: 
         enabled: true
