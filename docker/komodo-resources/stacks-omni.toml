@@ -1,0 +1,26 @@
+[[stack]]
+name = "omni"
+description = "Siderolabs Omni - Talos Linux management"
+tags = ["kubernetes", "omni"]
+[stack.config]
+server_id = "omni"
+file_paths = ["docker/stacks/omni/omni/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "alloy-omni"
+description = "Grafana Alloy monitoring agent for omni host"
+tags = ["monitoring", "omni"]
+[stack.config]
+server_id = "omni"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=omni
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

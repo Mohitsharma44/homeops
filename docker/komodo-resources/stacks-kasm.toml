@@ -1,0 +1,29 @@
+[[stack]]
+name = "newt"
+description = "Pangolin Newt tunnel agent"
+tags = ["networking", "kasm"]
+[stack.config]
+server_id = "kasm"
+file_paths = ["docker/stacks/kasm/newt/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+PANGOLIN_ENDPOINT=https://pangolin.proxy.sharmamohit.com
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "alloy-kasm"
+description = "Grafana Alloy monitoring agent for kasm host"
+tags = ["monitoring", "kasm"]
+[stack.config]
+server_id = "kasm"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=kasm
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

@@ -1,0 +1,11 @@
+[[build]]
+name = "periphery-custom"
+description = "Custom Komodo Periphery with SOPS + age"
+tags = ["system", "periphery"]
+[build.config]
+repo = "mohitsharma44/homeops"
+branch = "main"
+build_path = "docker/periphery"
+dockerfile_path = "Dockerfile"
+image_registry = "docker.io"
+image_name = "mohitsharma44/komodo-periphery-sops"

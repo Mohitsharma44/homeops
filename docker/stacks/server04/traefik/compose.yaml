@@ -1,0 +1,58 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--log.level=INFO"
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+      - "--serverstransport.insecureskipverify=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--certificatesresolvers.http.acme.dnschallenge=true"
+      - "--certificatesresolvers.http.acme.dnschallenge.provider=route53"
+      - "--certificatesresolvers.http.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      - "--certificatesresolvers.http.acme.dnschallenge.delayBeforeCheck=0"
+      - "--certificatesresolvers.http.acme.dnschallenge.disablepropagationcheck=true"
+      - "--certificatesresolvers.http.acme.email=mohitsharma44@gmail.com"
+      - "--certificatesresolvers.http.acme.storage=/letsencrypt/acme.json"
+      - "--entrypoints.http.http.redirections.entryPoint.to=https"
+      - "--entrypoints.http.http.redirections.entryPoint.scheme=https"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.addEntryPointsLabels=true"
+      - "--metrics.prometheus.addServicesLabels=true"
+    dns:
+      - 9.9.9.9
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9091:8080"
+    networks:
+      - traefik_proxy
+    env_file: .sops.env
+    volumes:
+      - ./letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.middlewares.compress_all.compress=true
+      - traefik.http.routers.api.rule=Host(`traefik.sharmamohit.com`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))
+      - traefik.http.routers.api.service=api@internal
+      - traefik.http.routers.api.entrypoints=https
+      - traefik.http.routers.api.tls=true
+      - traefik.http.routers.api.tls.certresolver=http
+      - traefik.http.routers.api.middlewares=cors
+      - traefik.http.middlewares.cors.headers.accesscontrolallowmethods=GET,OPTIONS,PUT
+      - traefik.http.middlewares.cors.headers.accesscontrolalloworiginlist=*
+      - traefik.http.middlewares.cors.headers.accesscontrolmaxage=100
+      - traefik.http.middlewares.cors.headers.addvaryheader=true
+      - traefik.http.services.dashboard@internal.loadbalancer.server.port=8080
+
+networks:
+  traefik_proxy:
+    external: true

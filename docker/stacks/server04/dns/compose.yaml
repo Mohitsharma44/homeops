@@ -1,0 +1,57 @@
+services:
+  unbound:
+    image: klutchell/unbound:v1.17.1
+    container_name: unbound
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      dns:
+        ipv4_address: 172.29.10.2
+    volumes:
+      - ./unbound-config:/etc/unbound/custom.conf.d:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  pihole:
+    image: pihole/pihole:2023.01.10
+    container_name: pihole
+    restart: always
+    depends_on:
+      - unbound
+    networks:
+      dns:
+        ipv4_address: 172.29.10.3
+    dns:
+      - 127.0.0.1
+      - 9.9.9.9
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8000:80/tcp"
+    env_file: .sops.env
+    environment:
+      - TZ=America/Vancouver
+      - PIHOLE_DNS_=172.29.10.2;172.29.10.2
+      - DNSMASQ_LISTENING=all
+      - WEBTHEME=default-dark
+      - FTLCONF_LOCAL_IPV4=0.0.0.0
+    volumes:
+      - ./pihole:/etc/pihole
+      - ./dnsmasq.d:/etc/dnsmasq.d
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  dns:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.10.0/24
+          gateway: 172.29.10.1

@@ -1,0 +1,56 @@
+services:
+  changedetection:
+    image: ghcr.io/dgtlmoon/changedetection.io
+    container_name: changedetection
+    hostname: changedetection
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      playwright-chrome:
+        condition: service_started
+    networks:
+      - traefik_proxy
+      - changedetection
+    dns:
+      - 9.9.9.9
+    environment:
+      - LOGGER_LEVEL=DEBUG
+      - PLAYWRIGHT_DRIVER_URL=ws://playwright-chrome:3000
+      - BASE_URL=https://changedetection.sharmamohit.com
+    volumes:
+      - changedetection:/datastore
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik_proxy
+      - traefik.http.routers.changedetection.entrypoints=https
+      - traefik.http.routers.changedetection.tls=true
+      - traefik.http.routers.changedetection.tls.certresolver=http
+      - traefik.http.routers.changedetection.rule=Host(`changedetection.sharmamohit.com`)
+      - traefik.http.routers.changedetection.service=changedetection
+      - traefik.http.services.changedetection.loadbalancer.server.port=5000
+
+  playwright-chrome:
+    image: dgtlmoon/sockpuppetbrowser:latest
+    hostname: playwright-chrome
+    restart: unless-stopped
+    networks:
+      - changedetection
+    dns:
+      - 9.9.9.9
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      - SCREEN_WIDTH=1920
+      - SCREEN_HEIGHT=1024
+      - SCREEN_DEPTH=16
+      - MAX_CONCURRENT_CHROME_PROCESSES=10
+
+volumes:
+  changedetection:
+    external: true
+
+networks:
+  traefik_proxy:
+    external: true
+  changedetection:

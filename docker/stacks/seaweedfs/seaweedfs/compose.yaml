@@ -1,0 +1,184 @@
+services:
+  master:
+    image: chrislusf/seaweedfs:4.06
+    container_name: seaweedfs-master
+    restart: unless-stopped
+    ports:
+      - "9333:9333"
+      - "19333:19333"
+      - "9324:9324"
+    command: >
+      master
+      -ip=seaweedfs.sharmamohit.com
+      -ip.bind=0.0.0.0
+      -mdir=/data
+      -metricsPort=9324
+      -volumeSizeLimitMB=30000
+      -garbageThreshold=0.3
+      -defaultReplication=000
+    volumes:
+      - /mnt/seaweedfs/master:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9333/cluster/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    security_opt:
+      - "no-new-privileges:true"
+
+  volume:
+    image: chrislusf/seaweedfs:4.06
+    container_name: seaweedfs-volume
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "18080:18080"
+      - "9325:9325"
+    command: >
+      volume
+      -mserver=seaweedfs.sharmamohit.com:9333
+      -ip=seaweedfs.sharmamohit.com
+      -ip.bind=0.0.0.0
+      -port=8080
+      -metricsPort=9325
+      -dir=/data
+      -max=0
+      -dataCenter=PhoenixDC
+      -rack=Garage
+    volumes:
+      - /mnt/seaweedfs/volume:/data
+    depends_on:
+      master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    security_opt:
+      - "no-new-privileges:true"
+
+  filer:
+    image: chrislusf/seaweedfs:4.06
+    container_name: seaweedfs-filer
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+      - "18888:18888"
+      - "9326:9326"
+    command: >
+      filer
+      -master=seaweedfs.sharmamohit.com:9333
+      -ip=seaweedfs.sharmamohit.com
+      -ip.bind=0.0.0.0
+      -metricsPort=9326
+      -dataCenter=PhoenixDC
+      -rack=Garage
+    volumes:
+      - /mnt/seaweedfs/filer:/data
+    tty: true
+    stdin_open: true
+    depends_on:
+      volume:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8888/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
+    security_opt:
+      - "no-new-privileges:true"
+
+  s3:
+    image: chrislusf/seaweedfs:4.06
+    container_name: seaweedfs-s3
+    restart: unless-stopped
+    ports:
+      - "8333:8333"
+      - "9327:9327"
+    command: >
+      s3
+      -filer=seaweedfs.sharmamohit.com:8888
+      -ip.bind=0.0.0.0
+      -metricsPort=9327
+      -config=/etc/seaweedfs/s3.json
+    volumes:
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    depends_on:
+      filer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9327/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    security_opt:
+      - "no-new-privileges:true"
+
+  webdav:
+    image: chrislusf/seaweedfs:4.06
+    container_name: seaweedfs-webdav
+    restart: unless-stopped
+    ports:
+      - "7333:7333"
+    command: 'webdav -filer=seaweedfs.sharmamohit.com:8888'
+    depends_on:
+      filer:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    security_opt:
+      - "no-new-privileges:true"

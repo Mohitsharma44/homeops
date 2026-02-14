@@ -1,0 +1,41 @@
+[[procedure]]
+name = "Rebuild Periphery Image"
+description = "Rebuild custom periphery with latest upstream base image"
+tags = ["system", "periphery"]
+config.schedule = "Every day at 04:00"
+
+[[procedure.config.stage]]
+name = "Build"
+executions = [
+  { execution.type = "RunBuild", execution.params.build = "periphery-custom" }
+]
+
+[[procedure]]
+name = "Global Auto Update"
+description = "Auto-update stacks and deployments"
+tags = ["system"]
+config.schedule = "Every day at 05:00"
+
+[[procedure.config.stage]]
+name = "Update All"
+executions = [
+  { execution.type = "GlobalAutoUpdate", execution.params = {} }
+]
+
+[[procedure]]
+name = "deploy-all-stacks"
+description = "Deploy all stacks if changed"
+tags = ["deploy"]
+
+[[procedure.config.stage]]
+name = "Infrastructure First"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "traefik" },
+  { execution.type = "DeployStack", execution.params.stack = "dns" },
+]
+
+[[procedure.config.stage]]
+name = "Applications"
+executions = [
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*" },
+]

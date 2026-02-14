@@ -1,0 +1,39 @@
+services:
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik_proxy
+    dns:
+      - 9.9.9.9
+    env_file: .sops.env
+    environment:
+      - DOMAIN=https://bitwarden.sharmamohit.com
+      - SMTP_FROM=${GMAIL_USERNAME}
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=465
+      - SMTP_SSL=false
+      - SMTP_EXPLICIT_TLS=true
+      - SMTP_USERNAME=${GMAIL_USERNAME}
+      - SMTP_PASSWORD=${GMAIL_APP_PASSWORD}
+    volumes:
+      - ./vw-data:/data
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik_proxy
+      - traefik.http.routers.bitwarden-ui.entrypoints=https
+      - traefik.http.routers.bitwarden-ui.tls=true
+      - traefik.http.routers.bitwarden-ui.tls.certresolver=http
+      - traefik.http.routers.bitwarden-ui.rule=Host(`bitwarden.sharmamohit.com`)
+      - traefik.http.routers.bitwarden-ui.service=bitwarden-ui
+      - traefik.http.services.bitwarden-ui.loadbalancer.server.port=80
+      - traefik.http.routers.bitwarden-websocket.rule=Host(`bitwarden.sharmamohit.com`) && Path(`/notifications/hub`)
+      - traefik.http.routers.bitwarden-websocket.service=bitwarden-websocket
+      - traefik.http.services.bitwarden-websocket.loadbalancer.server.port=3012
+
+networks:
+  traefik_proxy:
+    external: true
