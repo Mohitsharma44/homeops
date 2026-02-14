@@ -8,7 +8,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: monitoring
   source:
     # Bitnami migrated to OCI-only; legacy HTTP repo no longer serves charts
     repoURL: registry-1.docker.io/bitnamicharts
