@@ -17,6 +17,10 @@ spec:
       interval: 12h
   values:
     installCRDs: true
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: true
     replicaCount: 3
     extraArgs:
       - "--dns01-recursive-nameservers=192.168.11.1:53,9.9.9.9:53"
