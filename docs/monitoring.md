@@ -170,6 +170,7 @@ Authenticated Ingress endpoints allow external Docker hosts to push metrics and 
 
 **Ingress annotations** (both):
 - `auth-type: basic` + `auth-secret: monitoring-basic-auth`
+- `force-ssl-redirect: true` (ensure credentials are never sent over plain HTTP)
 - `proxy-body-size: 10m` (accommodate metric/log batches)
 - `proxy-read-timeout: 300` (allow slow remote-write flushes)
 - No TLS section — wildcard cert handled by ingress-nginx `default-ssl-certificate`
@@ -203,7 +204,7 @@ SOPS-encrypted secrets in `infrastructure/configs/`:
 | `thanos-objstore-secret` | monitoring | `objstore.yml` | Prometheus Thanos sidecar, Thanos components |
 | `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | Ingress basic auth for external write endpoints |
 
-**Credential rotation note**: Both secrets contain the same SeaweedFS observability IAM credentials. When rotating credentials, update **both** `seaweedfs-s3-secret` and `thanos-objstore-secret`, then re-encrypt with SOPS.
+**Credential rotation note**: The `seaweedfs-s3-secret` and `thanos-objstore-secret` both contain the same SeaweedFS observability IAM credentials. When rotating credentials, update **both** secrets, then re-encrypt with SOPS.
 
 ## Retention Policy
 
