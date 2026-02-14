@@ -5,6 +5,7 @@ resources:
   - default-tls-cert.yaml
   - ipaddressPool.yaml
   - ceph-cluster.yaml
+  - ceph/
   - monitoring-ns.yaml
   - seaweedfs-s3-secret.yaml
   - thanos-objstore-secret.yaml

@@ -1,0 +1,13 @@
+---
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: s3user
+  namespace: rook-ceph
+spec:
+  store: ceph-objectstore
+  displayName: "S3 User"
+  capabilities:
+    bucket: "*"
+    metadata: "read"
+    usage: "read"
