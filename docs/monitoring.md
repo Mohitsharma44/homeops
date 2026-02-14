@@ -9,7 +9,7 @@ Full metrics/logs/traces observability stack deployed in the `monitoring` namesp
 | Component | Chart | Version | Purpose |
 |-----------|-------|---------|---------|
 | kube-prometheus-stack | prometheus-community | 81.x | Prometheus, Grafana, Alertmanager, node-exporter, kube-state-metrics |
-| Thanos | bitnami/thanos | 17.x | Long-term metrics (Query, Store Gateway, Compactor) |
+| Thanos | bitnami/thanos (OCI: `registry-1.docker.io/bitnamicharts`) | 17.x | Long-term metrics (Query, Store Gateway, Compactor) |
 | Loki | grafana/loki | 6.x | Log aggregation (SingleBinary mode) |
 | Tempo | grafana/tempo | 1.x | Distributed tracing (monolithic mode) |
 | Alloy | grafana/alloy | 1.x | Log collection + trace forwarding (DaemonSet) |
@@ -152,7 +152,7 @@ Grafana
 | Prometheus | http://kube-prometheus-stack-prometheus.monitoring.svc:9090 |
 | Thanos Query | http://thanos-query.monitoring.svc:9090 |
 | Loki | http://loki.monitoring.svc:3100 |
-| Tempo HTTP | http://tempo.monitoring.svc:3100 |
+| Tempo HTTP | http://tempo.monitoring.svc:3200 |
 | Tempo OTLP gRPC | tempo.monitoring.svc:4317 |
 | Tempo OTLP HTTP | http://tempo.monitoring.svc:4318 |
 | Alertmanager | http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 |
@@ -208,7 +208,7 @@ Two SOPS-encrypted secrets in `infrastructure/configs/`:
 
 ## Security
 
-- **Pod Security Standards**: `monitoring` namespace enforces `baseline` PSS with `restricted` warnings
+- **Pod Security Standards**: `monitoring` namespace enforces `privileged` PSS (required by node-exporter: hostNetwork, hostPID, hostPath) with `baseline` warnings
 - **Loki multi-tenancy**: `auth_enabled: true` with tenant ID `homelab` — all clients must send `X-Scope-OrgID: homelab` header
 - **S3 transport**: Currently HTTP (`insecure: true`) over LAN. **TODO**: Enable TLS on SeaweedFS and update all S3 endpoint configs to remove `insecure: true`
 
@@ -284,6 +284,6 @@ kubectl port-forward -n monitoring svc/loki 3100
 # Visit http://localhost:3100/ready
 
 # Check Tempo readiness
-kubectl port-forward -n monitoring svc/tempo 3100
-# Visit http://localhost:3100/ready
+kubectl port-forward -n monitoring svc/tempo 3200
+# Visit http://localhost:3200/ready
 ```
