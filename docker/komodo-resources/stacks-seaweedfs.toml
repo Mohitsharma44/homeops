@@ -9,7 +9,7 @@ repo = "mohitsharma44/homeops"
 branch = "main"
 [stack.config.pre_deploy]
 path = "docker/stacks/seaweedfs/seaweedfs"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"
 
 [[stack]]
 name = "seaweedfs-alloy"
@@ -25,4 +25,4 @@ HOSTNAME=seaweedfs
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"

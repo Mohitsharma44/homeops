@@ -12,4 +12,4 @@ HOSTNAME=komodo
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"

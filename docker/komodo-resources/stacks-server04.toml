@@ -9,7 +9,7 @@ repo = "mohitsharma44/homeops"
 branch = "main"
 [stack.config.pre_deploy]
 path = "docker/stacks/server04/traefik"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"
 
 [[stack]]
 name = "vaultwarden"
@@ -25,7 +25,7 @@ VAULTWARDEN_URL=bitwarden.sharmamohit.com
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/server04/vaultwarden"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"
 
 [[stack]]
 name = "bookstack"
@@ -41,7 +41,7 @@ BOOKSTACK_URL=bookstack.sharmamohit.com
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/server04/bookstack"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"
 
 [[stack]]
 name = "server04-alloy"
@@ -57,4 +57,4 @@ HOSTNAME=server04
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
-command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
+command = "sops-decrypt.sh"
