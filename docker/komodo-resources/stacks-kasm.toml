@@ -12,7 +12,7 @@ PANGOLIN_ENDPOINT=https://pangolin.proxy.sharmamohit.com
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/kasm/newt"
-command = "sops-decrypt.sh"
+command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"
 
 [[stack]]
 name = "kasm-alloy"
@@ -28,4 +28,4 @@ HOSTNAME=kasm
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
-command = "sops-decrypt.sh"
+command = "bash -c 'shopt -s dotglob && source sops-decrypt.sh'"

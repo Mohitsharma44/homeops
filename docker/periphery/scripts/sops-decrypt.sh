@@ -2,6 +2,7 @@
 # Decrypt all SOPS-encrypted files in the current directory.
 # Called as pre_deploy hook by Komodo stacks.
 set -euo pipefail
+shopt -s dotglob
 
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-/etc/sops/age/keys.txt}"
 
