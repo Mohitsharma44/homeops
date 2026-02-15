@@ -8,6 +8,7 @@ file_paths = ["docker/stacks/server04/traefik/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 [stack.config.pre_deploy]
+path = "docker/stacks/server04/traefik"
 command = "sops-decrypt.sh"
 
 [[stack]]
@@ -23,6 +24,7 @@ environment = """
 VAULTWARDEN_URL=bitwarden.sharmamohit.com
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/server04/vaultwarden"
 command = "sops-decrypt.sh"
 
 [[stack]]
@@ -38,6 +40,7 @@ environment = """
 BOOKSTACK_URL=bookstack.sharmamohit.com
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/server04/bookstack"
 command = "sops-decrypt.sh"
 
 [[stack]]
@@ -53,4 +56,5 @@ environment = """
 HOSTNAME=server04
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/shared/alloy"
 command = "sops-decrypt.sh"

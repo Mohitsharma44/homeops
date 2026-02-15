@@ -11,6 +11,7 @@ environment = """
 PANGOLIN_ENDPOINT=https://pangolin.proxy.sharmamohit.com
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/kasm/newt"
 command = "sops-decrypt.sh"
 
 [[stack]]
@@ -26,4 +27,5 @@ environment = """
 HOSTNAME=kasm
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/shared/alloy"
 command = "sops-decrypt.sh"

@@ -11,4 +11,5 @@ environment = """
 HOSTNAME=komodo
 """
 [stack.config.pre_deploy]
+path = "docker/stacks/shared/alloy"
 command = "sops-decrypt.sh"
