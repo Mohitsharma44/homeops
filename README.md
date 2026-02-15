@@ -1,8 +1,54 @@
-# Homeops - FluxCD GitOps Repository
+# Homeops
 
-GitOps repository for Kubernetes clusters in homelab. Uses FluxCD for infrastructure bootstrapping and ArgoCD for application delivery.
+GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via Flux + ArgoCD) and **Docker** containers (via Komodo) from a single repo with unified secret management (SOPS + age).
 
-## Architecture
+## Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          homeops (this repo)                            │
+├─────────────────────────────────┬───────────────────────────────────────┤
+│   Kubernetes (Flux + ArgoCD)    │       Docker (Komodo GitOps)          │
+│                                 │                                       │
+│   3-node K8s cluster (minipcs)  │   6 Docker hosts                      │
+│   Infrastructure: MetalLB,      │   Hosts: komodo, nvr, kasm,           │
+│     Ingress, Cert-Manager,      │     omni, server04, seaweedfs         │
+│     Rook-Ceph                   │   13 stacks across all hosts          │
+│   Apps: Monitoring stack        │   Monitoring: Alloy on every host     │
+│     (Prometheus, Thanos, Loki,  │   Secrets: SOPS + age (pre_deploy)    │
+│     Tempo, Alloy, Grafana)      │                                       │
+├─────────────────────────────────┴───────────────────────────────────────┤
+│   Shared: SOPS + age encryption, *.sharmamohit.com domain,             │
+│           pre-commit hooks, observability (all telemetry → Grafana)     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+## Directory Structure
+
+```
+├── clusters/minipcs/           # K8s cluster entry point (Flux)
+├── infrastructure/
+│   ├── controllers/            # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
+│   └── configs/                # Post-controller configs (ceph-cluster, monitoring namespace)
+│       └── ceph/               # Standalone Ceph resource manifests
+├── apps/
+│   ├── base/argocd/            # ArgoCD itself (deployed by Flux)
+│   ├── argocd-apps/            # App-of-Apps pattern
+│   │   ├── root-app.yaml       # Root Application (watches apps/ directory)
+│   │   └── apps/               # ArgoCD Application + AppProject manifests
+│   └── minipcs/                # Cluster-specific Flux overlay
+├── docker/                     # Docker infrastructure (Komodo GitOps)
+│   ├── komodo-resources/       # TOML resource declarations
+│   ├── stacks/                 # Compose files + SOPS-encrypted secrets
+│   └── periphery/              # Custom periphery image (SOPS + age)
+└── docs/                       # Additional documentation
+    ├── ceph.md                 # Rook-Ceph storage
+    └── monitoring.md           # Observability stack architecture
+```
+
+## Kubernetes
+
+### Architecture
 
 ```
 Flux (Infrastructure) → ArgoCD (Applications)
@@ -13,34 +59,17 @@ Flux (Infrastructure) → ArgoCD (Applications)
 flux-operator → flux-instance → infra-controllers → infra-configs → apps (ArgoCD)
 ```
 
-## Directory Structure
+### Infrastructure Components
 
-```
-├── clusters/minipcs/           # Cluster entry point
-│   ├── flux-instance.yaml      # FluxInstance CRD (Flux Operator manages controllers)
-│   ├── kustomization.yaml      # Aggregates flux-instance, infrastructure, apps
-│   ├── infrastructure.yaml     # Triggers infra-controllers + infra-configs
-│   └── apps.yaml               # Triggers apps deployment (ArgoCD + root-app)
-├── infrastructure/
-│   ├── controllers/            # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
-│   └── configs/                # Post-controller configs (ceph-cluster, monitoring namespace)
-│       └── ceph/               # Standalone Ceph resource manifests (pools, filesystems, objectstore)
-└── apps/
-    ├── base/argocd/            # ArgoCD itself (deployed by Flux)
-    ├── argocd-apps/            # App-of-Apps pattern
-    │   ├── root-app.yaml       # Root Application (watches apps/ directory)
-    │   └── apps/               # ArgoCD Application + AppProject manifests
-    │       ├── project-monitoring.yaml  # AppProject for observability stack
-    │       ├── kube-prometheus-stack.yaml
-    │       ├── thanos.yaml
-    │       ├── loki.yaml
-    │       ├── tempo.yaml
-    │       ├── alloy.yaml
-    │       └── podinfo.yaml    # Example app
-    └── minipcs/                # Cluster-specific Flux overlay
-```
+| Component | Purpose | Key Config |
+|-----------|---------|------------|
+| **MetalLB** | LoadBalancer IPs | Pool: `192.168.11.88-98` |
+| **Ingress-NGINX** | HTTP routing | LB IP: `192.168.11.90`, default SSL cert |
+| **Cert-Manager** | TLS certificates | Let's Encrypt via Route53 DNS01 |
+| **Rook-Ceph** | Distributed storage | Uses all nodes/devices |
+| **ArgoCD** | Application delivery | `argocd.sharmamohit.com` |
 
-## App-of-Apps Pattern
+### App-of-Apps Pattern
 
 Applications are managed by ArgoCD using the App-of-Apps pattern:
 
@@ -59,31 +88,49 @@ Flux deploys:
                      └── podinfo.yaml               → project: default
 ```
 
-**ArgoCD Projects:**
-
-| Project | Apps | Scope |
-|---------|------|-------|
-| **monitoring** | kube-prometheus-stack, thanos, loki, tempo, alloy | `monitoring` + `kube-system` namespaces |
-| **default** | root-app, podinfo | Unrestricted |
-
 **To add a new application:**
 1. Create an ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
 2. Set `project:` to the appropriate AppProject (or `default`)
 3. Commit and push - ArgoCD auto-syncs
 
-## Infrastructure Components
+### Rook-Ceph Storage
 
-| Component | Purpose | Key Config |
-|-----------|---------|------------|
-| **MetalLB** | LoadBalancer IPs | Pool: `192.168.11.88-98` |
-| **Ingress-NGINX** | HTTP routing | LB IP: `192.168.11.90`, default SSL cert |
-| **Cert-Manager** | TLS certificates | Let's Encrypt via Route53 DNS01 |
-| **Rook-Ceph** | Distributed storage | Uses all nodes/devices |
-| **ArgoCD** | Application delivery | `argocd.sharmamohit.com` |
+Distributed storage (block, filesystem, object) via Rook-Ceph. See [docs/ceph.md](docs/ceph.md).
 
-## Observability Stack
+| StorageClass | Type | Replication |
+|-------------|------|-------------|
+| `ceph-block` (default) | RBD block | 3x replicated |
+| `ceph-filesystem` | CephFS shared | 3x replicated |
+| `ceph-bucket` | RGW S3 object | Erasure coded (2+1) |
 
-Metrics, logs, and traces via ArgoCD (`monitoring` project). See [docs/monitoring.md](docs/monitoring.md) for full architecture, data flow, retention policies, and endpoints.
+## Docker (Komodo GitOps)
+
+Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource Sync. See [docker/README.md](docker/README.md) for full documentation.
+
+### Hosts
+
+| Host | Role | Key Services |
+|------|------|-------------|
+| **komodo** | Komodo Core | Core, Periphery, Alloy |
+| **nvr** | Video Recording | Frigate (Coral TPU), Alloy |
+| **kasm** | Remote Desktop | KASM Workspaces, Newt, Alloy |
+| **omni** | K8s Management | Siderolabs Omni, Alloy |
+| **server04** | App Server + Build | Traefik, Vaultwarden, BookStack, Alloy |
+| **seaweedfs** | Object Storage | SeaweedFS (5 containers), Alloy |
+
+### How It Works
+
+1. Resource definitions (TOML) in `docker/komodo-resources/` declare servers, stacks, builds, and procedures
+2. A single ResourceSync pulls from this repo and creates/updates/deletes Komodo resources
+3. Each stack references a compose file in `docker/stacks/{host}/{service}/`
+4. Secrets are SOPS-encrypted `.sops.env` files decrypted at deploy time by a custom periphery image
+5. Alloy monitoring runs on every host, pushing metrics/logs to the K8s observability stack
+
+## Observability
+
+Full metrics, logs, and traces stack. See [docs/monitoring.md](docs/monitoring.md) for architecture, data flow, and retention policies.
+
+### K8s Observability (ArgoCD)
 
 | Component | Role |
 |-----------|------|
@@ -91,99 +138,50 @@ Metrics, logs, and traces via ArgoCD (`monitoring` project). See [docs/monitorin
 | **Thanos** | Long-term metrics (query, store gateway, compactor) |
 | **Loki** | Log aggregation |
 | **Tempo** | Distributed tracing |
-| **Alloy** | Log/trace collection (DaemonSet) |
+| **Alloy** | K8s log/trace collection (DaemonSet) |
 
-**Access:** `grafana.sharmamohit.com` | **S3 backend:** SeaweedFS on TrueNAS
+### Docker Host Observability (Komodo)
+
+Grafana Alloy runs on all 6 Docker hosts, collecting host metrics (node_exporter), container metrics (cAdvisor), and container logs. Data is pushed to the K8s Prometheus and Loki instances via authenticated external write endpoints.
+
+```
+Docker hosts (Alloy)  ──metrics──→  prometheus.sharmamohit.com  ──→  Prometheus  ──→  Thanos  ──→  Grafana
+                      ──logs────→  loki.sharmamohit.com         ──→  Loki               ──→  Grafana
+```
+
+### Access
+
+| Service | URL |
+|---------|-----|
+| Grafana | `https://grafana.sharmamohit.com` |
+| ArgoCD | `https://argocd.sharmamohit.com` |
+| Ceph Dashboard | `https://rook-ceph.sharmamohit.com` |
+| Komodo | `https://komodo.sharmamohit.com` |
 
 ## Secrets Management (SOPS + age)
 
-**How it works:**
-- `.sops.yaml` defines encryption rules (encrypts `data` and `stringData` fields)
-- Public key: `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk`
-- Private key: `~/.sops/key.txt` (must exist on your machine)
-- Flux decrypts secrets in-cluster using the `sops-age` secret in `flux-system` namespace
+Both Kubernetes and Docker secrets use the same SOPS + age encryption with the same key pair.
 
-**Pre-commit hooks prevent committing unencrypted secrets:**
-- `encrypt-sops-files.sh` - auto-encrypts files matching `*secret.yaml`
-- `forbid-secrets` - blocks commits with unencrypted secret data
+| Layer | Secret Format | Decryption |
+|-------|--------------|------------|
+| **Kubernetes** | `*secret.yaml` (encrypts `data`/`stringData` fields) | Flux decrypts in-cluster via `sops-age` secret |
+| **Docker** | `.sops.env`, `.sops.json` (encrypts entire file) | Periphery agent decrypts at deploy time via `pre_deploy` hook |
 
-**Encrypt a secret manually:**
+**Key:**
+- Public: `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk`
+- Private: `~/.sops/key.txt` (local), `/etc/sops/age/keys.txt` (Docker hosts), `sops-age` secret (K8s cluster)
+
+**Pre-commit hooks** prevent committing unencrypted secrets:
+- `encrypt-sops-files.sh` — auto-encrypts files matching `*secret.yaml`
+- `forbid-secrets` — blocks commits with unencrypted secret data
+
 ```bash
-sops -e -i path/to/secret.yaml
-```
+# Encrypt
+sops -e -i path/to/secret.yaml        # K8s
+sops -e -i docker/stacks/host/svc/.sops.env  # Docker
 
-**Decrypt for viewing:**
-```bash
+# Decrypt (view only)
 sops -d path/to/secret.yaml
-```
-
-## Bootstrap (Fresh Cluster)
-
-### Prerequisites
-- Kubernetes cluster accessible via kubectl
-- [Helm](https://helm.sh/docs/intro/install/) installed
-- age key at `~/.sops/key.txt`
-- GitHub App for Flux (see setup below)
-
-### Create the GitHub App
-
-1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**
-2. Fill in:
-   - **Name**: anything (e.g. `flux-homeops`)
-   - **Homepage URL**: `https://github.com/Mohitsharma44/homeops`
-   - **Webhook**: uncheck "Active"
-   - **Repository permissions → Contents**: Read-only
-   - **Where can this app be installed**: Only on this account
-3. Click **Create GitHub App** — note the **App ID** from the app settings page
-4. Scroll to **Private keys** → **Generate a private key** (saves a `.pem` file)
-5. Click **Install App** → select **Only select repositories** → pick `homeops`
-6. Note the **Installation ID** from the URL: `https://github.com/settings/installations/<id>`
-
-You'll need three values for the bootstrap: **App ID**, **Installation ID**, and the **private key `.pem` file**.
-
-### Steps
-
-```bash
-# 1. Create the flux-system namespace
-kubectl create namespace flux-system
-
-# 2. Create the SOPS decryption secret (Flux needs this to decrypt secrets)
-kubectl -n flux-system create secret generic sops-age \
-  --from-file=age.agekey=$HOME/.sops/key.txt
-
-# 3. Create the GitHub App secret (used by source-controller to pull the repo)
-kubectl -n flux-system create secret generic flux-system \
-  --from-literal=githubAppID=<app-id> \
-  --from-literal=githubAppInstallationID=<installation-id> \
-  --from-file=githubAppPrivateKey=<path-to-private-key.pem>
-
-# 4. Install the Flux Operator via Helm
-helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
-  --namespace flux-system
-
-# 5. Apply the FluxInstance to start GitOps reconciliation
-kubectl apply -f clusters/minipcs/flux-instance.yaml
-
-# 6. Watch reconciliation
-kubectl -n flux-system get fluxinstance flux -w
-flux get kustomizations --watch
-```
-
-### Post-Bootstrap Verification
-
-```bash
-kubectl -n flux-system get deploy                # 4 controllers + flux-operator
-kubectl -n flux-system get fluxinstance flux      # Ready: True
-kubectl -n flux-system get gitrepository flux-system  # Ready: True
-flux get kustomizations                          # All 3 Ready
-flux get helmreleases -A                         # All Ready
-```
-
-After Flux reconciles, ArgoCD will be available at `argocd.sharmamohit.com`.
-
-**Get ArgoCD admin password:**
-```bash
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 ```
 
 ## Network Layout
@@ -195,97 +193,132 @@ Ingress LB:   192.168.11.90
 ```
 
 **Domains (wildcard cert: `*.sharmamohit.com`):**
-- `argocd.sharmamohit.com` - ArgoCD UI
-- `grafana.sharmamohit.com` - Grafana dashboards
-- `rook-ceph.sharmamohit.com` - Ceph dashboard
-- `podinfo.sharmamohit.com` - Test app
 
-## Rook-Ceph Storage
+| Domain | Service |
+|--------|---------|
+| `argocd.sharmamohit.com` | ArgoCD UI |
+| `grafana.sharmamohit.com` | Grafana dashboards |
+| `rook-ceph.sharmamohit.com` | Ceph dashboard |
+| `komodo.sharmamohit.com` | Komodo UI |
+| `bitwarden.sharmamohit.com` | Vaultwarden |
+| `bookstack.sharmamohit.com` | BookStack wiki |
+| `prometheus.sharmamohit.com` | Prometheus remote-write endpoint |
+| `loki.sharmamohit.com` | Loki push endpoint |
 
-Distributed storage (block, filesystem, object) via Rook-Ceph. See [docs/ceph.md](docs/ceph.md) for deployment structure, StorageClasses, object store config, and common operations.
+## Bootstrap
 
-Split into three parts: Rook operator (Helm), CephCluster (Helm), and storage resources (standalone manifests in `infrastructure/configs/ceph/`). Standalone manifests avoid Helm upgrade failures from immutable StorageClass fields.
+### Kubernetes (Fresh Cluster)
 
-| StorageClass | Type | Replication |
-|-------------|------|-------------|
-| `ceph-block` (default) | RBD block | 3x replicated |
-| `ceph-filesystem` | CephFS shared | 3x replicated |
-| `ceph-bucket` | RGW S3 object | Erasure coded (2+1) |
+**Prerequisites:** Kubernetes cluster, Helm, age key at `~/.sops/key.txt`, GitHub App for Flux
 
-**Dashboard:** `rook-ceph.sharmamohit.com`
+```bash
+# 1. Create flux-system namespace
+kubectl create namespace flux-system
+
+# 2. Create SOPS decryption secret
+kubectl -n flux-system create secret generic sops-age \
+  --from-file=age.agekey=$HOME/.sops/key.txt
+
+# 3. Create GitHub App secret
+kubectl -n flux-system create secret generic flux-system \
+  --from-literal=githubAppID=<app-id> \
+  --from-literal=githubAppInstallationID=<installation-id> \
+  --from-file=githubAppPrivateKey=<path-to-private-key.pem>
+
+# 4. Install Flux Operator
+helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
+  --namespace flux-system
+
+# 5. Apply FluxInstance
+kubectl apply -f clusters/minipcs/flux-instance.yaml
+
+# 6. Watch reconciliation
+flux get kustomizations --watch
+```
+
+### Docker (Komodo)
+
+See [docker/README.md](docker/README.md) for full setup. In short:
+
+1. Komodo Core + Periphery deployed on the komodo host
+2. Custom periphery image (with SOPS + age) deployed on all 6 hosts
+3. Age private key distributed to `/etc/sops/age/keys.txt` on each host
+4. ResourceSync created pointing at `docker/komodo-resources/`
+5. Stacks deployed via `km execute deploy-stack <name>` or Komodo UI
 
 ## Common Operations
 
-**Force reconciliation:**
+### Kubernetes
+
 ```bash
+# Force Flux reconciliation
 flux reconcile kustomization flux-system --with-source
-```
 
-**Check Flux Operator / FluxInstance status:**
-```bash
-kubectl -n flux-system get fluxinstance flux
-kubectl -n flux-system describe fluxinstance flux
-```
-
-**Check Flux status:**
-```bash
+# Check status
 flux get all
-flux logs --level=error
-```
+flux get helmreleases -A
 
-**Suspend/resume a resource:**
-```bash
+# Suspend/resume
 flux suspend kustomization apps
 flux resume kustomization apps
 ```
 
-**Debug HelmRelease:**
+### Docker (Komodo)
+
 ```bash
-flux get helmreleases -A
-kubectl describe helmrelease <name> -n <namespace>
+# Sync resources from git
+km execute sync 'mohitsharma44/homeops'
+
+# Deploy a stack
+km execute deploy-stack <stack-name>
+
+# Check status
+km list stacks -a
+km list servers -a
 ```
 
-## Adding New Infrastructure
+### Adding New Infrastructure
 
+**K8s controller:**
 1. Create directory under `infrastructure/controllers/<name>/`
-2. Add: `ns.yaml`, `repo.yaml` (if new helm repo), `hr.yaml`, `kustomization.yaml`
+2. Add `ns.yaml`, `repo.yaml`, `hr.yaml`, `kustomization.yaml`
 3. Reference in `infrastructure/controllers/kustomization.yaml`
-4. Commit and push - Flux auto-reconciles
+4. Commit and push
 
-## Adding New Apps (via ArgoCD)
+**K8s app (ArgoCD):**
+1. Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
+2. Set `project:` and commit
 
-1. Create an AppProject if needed (or use an existing one like `monitoring` or `default`)
-2. Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
-3. Set `project:` to the appropriate AppProject
-4. Commit and push - ArgoCD auto-syncs via root-app
-
-## Generating a New age Key (if lost)
-
-```bash
-age-keygen -o ~/.sops/key.txt
-# Update .sops.yaml with the new public key
-# Re-encrypt all secrets with the new key
-# Update the sops-age secret in the cluster
-```
+**Docker stack:**
+1. Create `docker/stacks/{host}/{service}/compose.yaml` + `.sops.env`
+2. Add stack definition to `docker/komodo-resources/stacks-{host}.toml`
+3. Commit, push, sync, deploy
 
 ## Troubleshooting
 
 **Flux not reconciling:**
 ```bash
-kubectl -n flux-system get fluxinstance flux        # Check operator status
-kubectl get gitrepository -n flux-system
+kubectl -n flux-system get fluxinstance flux
 kubectl describe kustomization flux-system -n flux-system
 ```
 
-**Secret decryption failing:**
+**Secret decryption failing (K8s):**
 ```bash
-kubectl get secret sops-age -n flux-system  # Verify it exists
+kubectl get secret sops-age -n flux-system
 kubectl logs -n flux-system deploy/kustomize-controller | grep -i sops
 ```
 
-**HelmRelease stuck:**
+**Komodo stack deploy failing:**
 ```bash
-kubectl get helmrelease -A
-flux get helmreleases -A
-helm list -A  # Check Helm directly
+km list stacks -a                    # Check state
+# View deployment logs in Komodo UI or via API
+```
+
+**Generating a new age key:**
+```bash
+age-keygen -o ~/.sops/key.txt
+# Update .sops.yaml with new public key
+# Re-encrypt all secrets
+# Update sops-age secret in K8s cluster
+# Distribute new key to all Docker hosts
 ```
