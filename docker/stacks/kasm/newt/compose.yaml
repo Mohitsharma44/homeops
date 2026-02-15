@@ -1,0 +1,10 @@
+services:
+  newt:
+    container_name: newt
+    image: fosrl/newt:1.7.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PANGOLIN_ENDPOINT: https://pangolin.proxy.sharmamohit.com
+    security_opt:
+      - "no-new-privileges:true"

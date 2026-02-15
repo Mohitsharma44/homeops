@@ -1,4 +1,8 @@
 creation_rules:
+  # Docker/Komodo secrets (encrypt entire .sops.env and .sops.json files)
+  - path_regex: docker/stacks/.*\.sops\.(env|json)$
+    age: age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk
+  # K8s secrets (existing rule)
   - path_regex: .*.yaml
     encrypted_regex: '^(data|stringData)$'
     age: age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk

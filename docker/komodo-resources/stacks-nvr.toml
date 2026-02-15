@@ -1,0 +1,24 @@
+[[stack]]
+name = "frigate"
+description = "Frigate NVR with Coral TPU"
+tags = ["media", "nvr"]
+[stack.config]
+server_id = "nvr"
+file_paths = ["docker/stacks/nvr/frigate/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+
+[[stack]]
+name = "alloy-nvr"
+description = "Grafana Alloy monitoring agent for nvr host"
+tags = ["monitoring", "nvr"]
+[stack.config]
+server_id = "nvr"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=nvr
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

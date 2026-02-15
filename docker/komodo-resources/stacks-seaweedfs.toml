@@ -1,0 +1,26 @@
+[[stack]]
+name = "seaweedfs"
+description = "SeaweedFS distributed object storage"
+tags = ["storage", "seaweedfs"]
+[stack.config]
+server_id = "seaweedfs"
+file_paths = ["docker/stacks/seaweedfs/seaweedfs/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "alloy-seaweedfs"
+description = "Grafana Alloy monitoring agent for seaweedfs host"
+tags = ["monitoring", "seaweedfs"]
+[stack.config]
+server_id = "seaweedfs"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=seaweedfs
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

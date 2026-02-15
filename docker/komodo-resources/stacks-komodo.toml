@@ -1,0 +1,14 @@
+[[stack]]
+name = "alloy-komodo"
+description = "Grafana Alloy monitoring agent for komodo host"
+tags = ["monitoring", "komodo"]
+[stack.config]
+server_id = "komodo"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=komodo
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

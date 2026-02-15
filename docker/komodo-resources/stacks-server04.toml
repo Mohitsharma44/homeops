@@ -1,0 +1,56 @@
+[[stack]]
+name = "traefik"
+description = "Traefik reverse proxy"
+tags = ["infrastructure", "server04"]
+[stack.config]
+server_id = "server04"
+file_paths = ["docker/stacks/server04/traefik/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "vaultwarden"
+description = "Vaultwarden password manager"
+tags = ["security", "server04"]
+[stack.config]
+server_id = "server04"
+file_paths = ["docker/stacks/server04/vaultwarden/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+VAULTWARDEN_URL=bitwarden.sharmamohit.com
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "bookstack"
+description = "BookStack wiki"
+tags = ["apps", "server04"]
+[stack.config]
+server_id = "server04"
+file_paths = ["docker/stacks/server04/bookstack/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+BOOKSTACK_URL=bookstack.sharmamohit.com
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "alloy-server04"
+description = "Grafana Alloy monitoring agent for server04 host"
+tags = ["monitoring", "server04"]
+[stack.config]
+server_id = "server04"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=server04
+"""
+[stack.config.pre_deploy]
+command = "sops-decrypt.sh"

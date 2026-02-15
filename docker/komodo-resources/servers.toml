@@ -1,0 +1,53 @@
+[[server]]
+name = "komodo"
+description = "Komodo Core host - LXC on Proxmox"
+tags = ["proxmox", "core"]
+[server.config]
+address = "https://komodo.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
+
+[[server]]
+name = "nvr"
+description = "NVR host - Frigate with Coral TPU"
+tags = ["proxmox", "media"]
+[server.config]
+address = "https://nvr.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
+
+[[server]]
+name = "kasm"
+description = "KASM Workspaces host"
+tags = ["proxmox", "remote-desktop"]
+[server.config]
+address = "https://kasm.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
+
+[[server]]
+name = "omni"
+description = "Siderolabs Omni - Talos management"
+tags = ["proxmox", "kubernetes"]
+[server.config]
+address = "https://omni.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
+
+[[server]]
+name = "server04"
+description = "Primary application server"
+tags = ["bare-metal", "apps"]
+[server.config]
+address = "https://server04.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
+
+[[server]]
+name = "seaweedfs"
+description = "SeaweedFS distributed storage"
+tags = ["bare-metal", "storage"]
+[server.config]
+address = "https://seaweedfs.sharmamohit.com:8120"
+region = "HomeLab"
+enabled = true
