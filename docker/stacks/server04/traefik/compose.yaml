@@ -34,7 +34,7 @@ services:
       - "9091:8080"
     networks:
       - traefik_proxy
-    env_file: .sops.env
+    env_file: .env
     volumes:
       - ./letsencrypt:/letsencrypt
       - /var/run/docker.sock:/var/run/docker.sock:ro

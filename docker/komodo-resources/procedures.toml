@@ -31,7 +31,6 @@ tags = ["deploy"]
 name = "Infrastructure First"
 executions = [
   { execution.type = "DeployStack", execution.params.stack = "traefik" },
-  { execution.type = "DeployStack", execution.params.stack = "dns" },
 ]
 
 [[procedure.config.stage]]

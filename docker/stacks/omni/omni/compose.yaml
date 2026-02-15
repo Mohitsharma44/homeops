@@ -8,6 +8,8 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun
+    security_opt:
+      - no-new-privileges:true
     env_file: .env
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro

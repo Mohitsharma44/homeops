@@ -8,4 +8,4 @@ value = "sharmamohit.com"
 
 [[variable]]
 name = "TZ"
-value = "America/Los_Angeles"
+value = "America/Vancouver"

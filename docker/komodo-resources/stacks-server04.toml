@@ -41,43 +41,6 @@ BOOKSTACK_URL=bookstack.sharmamohit.com
 command = "sops-decrypt.sh"
 
 [[stack]]
-name = "changedetection"
-description = "Change detection monitoring"
-tags = ["apps", "server04"]
-[stack.config]
-server_id = "server04"
-file_paths = ["docker/stacks/server04/changedetection/compose.yaml"]
-repo = "mohitsharma44/homeops"
-branch = "main"
-
-[[stack]]
-name = "dns"
-description = "Pihole + Unbound recursive DNS"
-tags = ["infrastructure", "server04"]
-[stack.config]
-server_id = "server04"
-file_paths = ["docker/stacks/server04/dns/compose.yaml"]
-repo = "mohitsharma44/homeops"
-branch = "main"
-environment = """
-TZ=America/Los_Angeles
-"""
-[stack.config.pre_deploy]
-command = "sops-decrypt.sh"
-
-[[stack]]
-name = "unifi"
-description = "UniFi Network Controller"
-tags = ["infrastructure", "server04"]
-[stack.config]
-server_id = "server04"
-file_paths = ["docker/stacks/server04/unifi/compose.yaml"]
-repo = "mohitsharma44/homeops"
-branch = "main"
-[stack.config.pre_deploy]
-command = "sops-decrypt.sh"
-
-[[stack]]
 name = "alloy-server04"
 description = "Grafana Alloy monitoring agent for server04 host"
 tags = ["monitoring", "server04"]

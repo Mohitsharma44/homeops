@@ -10,7 +10,7 @@ services:
     networks:
       - bookstack
       - traefik_proxy
-    env_file: .sops.env
+    env_file: .env
     environment:
       - PUID=1000
       - PGID=1000
@@ -43,7 +43,7 @@ services:
       - no-new-privileges:true
     networks:
       - bookstack
-    env_file: .sops.env
+    env_file: .env
     environment:
       - PUID=1000
       - PGID=1000
