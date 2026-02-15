@@ -1,4 +1,18 @@
 [[procedure]]
+name = "Backup Core Database"
+description = "Triggers the Core database backup at the scheduled time"
+tags = ["system"]
+config.schedule = "Every day at 01:00"
+config.schedule_alert = true
+config.failure_alert = true
+
+[[procedure.config.stage]]
+name = "Backup"
+executions = [
+  { execution.type = "BackupCoreDatabase", execution.params = {} }
+]
+
+[[procedure]]
 name = "Rebuild Periphery Image"
 description = "Rebuild custom periphery with latest upstream base image"
 tags = ["system", "periphery"]

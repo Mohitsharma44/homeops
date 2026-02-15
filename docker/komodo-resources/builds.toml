@@ -1,8 +1,17 @@
+[[builder]]
+name = "server04-builder"
+description = "Docker build server on server04"
+tags = ["system"]
+[builder.config]
+type = "Server"
+params.server = "server04"
+
 [[build]]
 name = "periphery-custom"
 description = "Custom Komodo Periphery with SOPS + age"
 tags = ["system", "periphery"]
 [build.config]
+builder = "server04-builder"
 repo = "mohitsharma44/homeops"
 branch = "main"
 build_path = "docker/periphery"
