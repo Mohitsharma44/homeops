@@ -17,7 +17,7 @@ stacks/                    # Compose files + encrypted secrets
 periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 ```
 
-## Hosts & Stacks (13 total)
+## Hosts & Stacks (12 total)
 
 | Host | IP | SSH | Stacks |
 |------|----|-----|--------|
@@ -25,10 +25,8 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | nvr | 192.168.11.89 | root@nvr | frigate, nvr-alloy |
 | kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
-| server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, bookstack, server04-alloy |
+| server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, server04-alloy |
 | seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
-
-**Not yet migrated** (server04): Pihole/Unbound, UniFi Controller, Changedetection
 
 ## Komodo Access
 - **UI**: https://komodo.sharmamohit.com
@@ -40,7 +38,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 
 `.sops.env` (or `.sops.json`) files live next to each `compose.yaml`. At deploy time, Komodo's `pre_deploy` hook runs `sops-decrypt.sh` on the Periphery agent, decrypting `*.sops.env` → `*.env`. Compose reads via `env_file: .env`.
 
-Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, bookstack, seaweedfs (`s3.sops.json`). Only frigate has no secrets.
+Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, seaweedfs (`s3.sops.json`). Only frigate has no secrets.
 
 ## Custom Periphery Image
 `mohitsharma44/komodo-periphery-sops:latest` — upstream Periphery + sops + age + `sops-decrypt.sh`. Built on server04 via `km execute run-build periphery-custom`. Dockerfile at `periphery/Dockerfile`.

@@ -28,22 +28,6 @@ path = "docker/stacks/server04/vaultwarden"
 command = "sops-decrypt.sh"
 
 [[stack]]
-name = "bookstack"
-description = "BookStack wiki"
-tags = ["apps", "server04"]
-[stack.config]
-server_id = "server04"
-file_paths = ["docker/stacks/server04/bookstack/compose.yaml"]
-repo = "mohitsharma44/homeops"
-branch = "main"
-environment = """
-BOOKSTACK_URL=bookstack.sharmamohit.com
-"""
-[stack.config.pre_deploy]
-path = "docker/stacks/server04/bookstack"
-command = "sops-decrypt.sh"
-
-[[stack]]
 name = "server04-alloy"
 description = "Grafana Alloy monitoring agent for server04 host"
 tags = ["monitoring", "server04"]

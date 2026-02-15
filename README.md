@@ -13,7 +13,7 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 │   3-node K8s cluster (minipcs)  │   6 Docker hosts                      │
 │   Infrastructure: MetalLB,      │   Hosts: komodo, nvr, kasm,           │
 │     Ingress, Cert-Manager,      │     omni, server04, seaweedfs         │
-│     Rook-Ceph                   │   13 stacks across all hosts          │
+│     Rook-Ceph                   │   12 stacks across all hosts          │
 │   Apps: Monitoring stack        │   Monitoring: Alloy on every host     │
 │     (Prometheus, Thanos, Loki,  │   Secrets: SOPS + age (pre_deploy)    │
 │     Tempo, Alloy, Grafana)      │                                       │
@@ -86,7 +86,7 @@ Flux deploys:
                      ├── loki.yaml                  → project: monitoring
                      ├── tempo.yaml                 → project: monitoring
                      ├── alloy.yaml                 → project: monitoring
-                     └── podinfo.yaml               → project: default
+                     └── ...more apps
 ```
 
 **To add a new application:**
@@ -116,7 +116,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | **nvr** | Video Recording | Frigate (Coral TPU), Alloy |
 | **kasm** | Remote Desktop | KASM Workspaces, Newt, Alloy |
 | **omni** | K8s Management | Siderolabs Omni, Alloy |
-| **server04** | App Server + Build | Traefik, Vaultwarden, BookStack, Alloy |
+| **server04** | App Server + Build | Traefik, Vaultwarden, Alloy |
 | **seaweedfs** | Object Storage | SeaweedFS (5 containers), Alloy |
 
 ### How It Works
@@ -202,7 +202,6 @@ Ingress LB:   192.168.11.90
 | `rook-ceph.sharmamohit.com` | Ceph dashboard |
 | `komodo.sharmamohit.com` | Komodo UI |
 | `bitwarden.sharmamohit.com` | Vaultwarden |
-| `bookstack.sharmamohit.com` | BookStack wiki |
 | `prometheus.sharmamohit.com` | Prometheus remote-write endpoint |
 | `loki.sharmamohit.com` | Loki push endpoint |
 

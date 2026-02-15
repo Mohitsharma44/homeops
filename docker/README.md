@@ -35,7 +35,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | **nvr** | 192.168.11.89 | `root@nvr` | Video recording | frigate, nvr-alloy |
 | **kasm** | 192.168.11.34 | `root@kasm` | Remote desktop (KASM) | newt, kasm-alloy |
 | **omni** | 192.168.11.30 | `root@omni` | Talos K8s management | omni, omni-alloy |
-| **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden, bookstack, server04-alloy |
+| **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden, server04-alloy |
 | **seaweedfs** | 192.168.11.133 | `mohitsharma44@seaweedfs` | Object storage | seaweedfs, seaweedfs-alloy |
 
 **Notes:**
@@ -76,7 +76,6 @@ docker/
 │   ├── omni/omni/
 │   ├── server04/traefik/
 │   ├── server04/vaultwarden/
-│   ├── server04/bookstack/
 │   └── seaweedfs/seaweedfs/
 └── periphery/                  # Custom periphery Docker image
     ├── Dockerfile

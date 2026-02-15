@@ -38,9 +38,7 @@ Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workf
    │ Talos   │  │ Traefik  │ │  │ S3 object  │                    │
    │ Mgmt    │  │ Vault-   │ │  │ storage    │                    │
    │ Alloy   │  │ warden   │ │  │ Alloy      │                    │
-   └─────────┘  │ Book-    │ │  └────────────┘                    │
-                │ stack    │ │                                     │
-                │ Alloy    │ │                                     │
+   └─────────┘  │ Alloy    │ │  └────────────┘                    │
                 └──────────┘ │                                     │
                              └─────────────────────────────────────┘
 ```
@@ -136,16 +134,10 @@ Primary application server and Docker build server for custom images.
 |---------|-----------|-------|
 | Traefik | `traefik` | Reverse proxy, `traefik_proxy` external network |
 | Vaultwarden | `vaultwarden` | `bitwarden.sharmamohit.com` |
-| BookStack | `bookstack` + `bookstack_db` | `bookstack.sharmamohit.com` |
 | Periphery | `komodo-periphery-periphery-1` | Also serves as Komodo build server |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
 **Traefik network**: Services that need reverse proxying must join the `traefik_proxy` external Docker network and use Traefik labels for routing.
-
-**Not yet migrated to Komodo** (running standalone):
-- Pihole + Unbound (DNS, standalone `docker run` — not compose-managed)
-- UniFi Controller + MongoDB + Watchtower
-- Changedetection
 
 **Periphery quirk**: Requires explicit `dns: ["192.168.11.1"]` in the periphery compose — Docker's embedded DNS doesn't forward correctly on this host.
 
