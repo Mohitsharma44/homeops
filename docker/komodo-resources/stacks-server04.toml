@@ -41,7 +41,7 @@ BOOKSTACK_URL=bookstack.sharmamohit.com
 command = "sops-decrypt.sh"
 
 [[stack]]
-name = "alloy-server04"
+name = "server04-alloy"
 description = "Grafana Alloy monitoring agent for server04 host"
 tags = ["monitoring", "server04"]
 [stack.config]

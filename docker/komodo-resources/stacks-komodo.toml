@@ -1,5 +1,5 @@
 [[stack]]
-name = "alloy-komodo"
+name = "komodo-alloy"
 description = "Grafana Alloy monitoring agent for komodo host"
 tags = ["monitoring", "komodo"]
 [stack.config]

@@ -11,7 +11,7 @@ branch = "main"
 command = "sops-decrypt.sh"
 
 [[stack]]
-name = "alloy-omni"
+name = "omni-alloy"
 description = "Grafana Alloy monitoring agent for omni host"
 tags = ["monitoring", "omni"]
 [stack.config]

@@ -14,7 +14,7 @@ PANGOLIN_ENDPOINT=https://pangolin.proxy.sharmamohit.com
 command = "sops-decrypt.sh"
 
 [[stack]]
-name = "alloy-kasm"
+name = "kasm-alloy"
 description = "Grafana Alloy monitoring agent for kasm host"
 tags = ["monitoring", "kasm"]
 [stack.config]

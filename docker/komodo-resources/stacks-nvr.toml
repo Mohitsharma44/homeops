@@ -9,7 +9,7 @@ repo = "mohitsharma44/homeops"
 branch = "main"
 
 [[stack]]
-name = "alloy-nvr"
+name = "nvr-alloy"
 description = "Grafana Alloy monitoring agent for nvr host"
 tags = ["monitoring", "nvr"]
 [stack.config]
