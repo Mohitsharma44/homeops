@@ -43,7 +43,8 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 │   └── periphery/              # Custom periphery image (SOPS + age)
 └── docs/                       # Additional documentation
     ├── ceph.md                 # Rook-Ceph storage
-    └── monitoring.md           # Observability stack architecture
+    ├── monitoring.md           # Observability stack architecture
+    └── docker-hosts.md         # Docker host operational reference
 ```
 
 ## Kubernetes

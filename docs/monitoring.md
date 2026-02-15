@@ -157,6 +157,19 @@ Grafana
 | Tempo OTLP HTTP | http://tempo.monitoring.svc:4318 |
 | Alertmanager | http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 |
 
+## Docker Host Monitoring (Alloy via Komodo)
+
+In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all 6 Docker hosts (managed by [Komodo](/docker/README.md)). Each host collects:
+
+- **Host metrics**: CPU, memory, disk, network via embedded node_exporter
+- **Container metrics**: per-container resource usage via embedded cAdvisor
+- **Container logs**: stdout/stderr from all Docker containers
+
+Data is pushed to the K8s observability stack via the external write endpoints below. All Docker metrics include `source="docker"` and `instance=<hostname>` labels for filtering in Grafana.
+
+Alloy compose and config: `docker/stacks/shared/alloy/compose.yaml`
+Per-host credentials: `docker/stacks/shared/alloy/.sops.env` (SOPS-encrypted)
+
 ## External Write Endpoints
 
 Authenticated Ingress endpoints allow external Docker hosts to push metrics and logs into the K8s observability stack. Both use basic auth (`monitoring-basic-auth` secret) and `pathType: Exact` to restrict access to write-only paths — no query endpoints are exposed.

@@ -32,16 +32,26 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | Host | Address | SSH | Role | Managed Stacks |
 |------|---------|-----|------|----------------|
 | **komodo** | 192.168.11.200 | `root@komodo` | Komodo Core + Periphery | komodo-alloy |
-| **nvr** | — | `root@nvr` | Video recording | frigate, nvr-alloy |
+| **nvr** | 192.168.11.89 | `root@nvr` | Video recording | frigate, nvr-alloy |
 | **kasm** | 192.168.11.34 | `root@kasm` | Remote desktop (KASM) | newt, kasm-alloy |
-| **omni** | — | `root@omni` | Talos K8s management | omni, omni-alloy |
-| **server04** | — | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden, bookstack, server04-alloy |
-| **seaweedfs** | — | `mohitsharma44@seaweedfs` | Object storage | seaweedfs, seaweedfs-alloy |
+| **omni** | 192.168.11.30 | `root@omni` | Talos K8s management | omni, omni-alloy |
+| **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden, bookstack, server04-alloy |
+| **seaweedfs** | 192.168.11.133 | `mohitsharma44@seaweedfs` | Object storage | seaweedfs, seaweedfs-alloy |
 
 **Notes:**
 - KASM Workspaces is installer-managed and NOT managed by Komodo. Only Newt (tunnel agent) is managed on that host.
 - server04 doubles as the Docker build server for custom images.
 - komodo runs inside a Proxmox LXC container (ID 200).
+
+For detailed per-host information (OS, containers, hardware, quirks), see [docs/docker-hosts.md](/docs/docker-hosts.md).
+
+### Periphery Compose Locations
+
+| Host | Periphery Compose Path |
+|------|----------------------|
+| komodo | `/opt/komodo/compose.yaml` (bundled with Core) |
+| nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
+| server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
 
 ## Directory Structure
 
