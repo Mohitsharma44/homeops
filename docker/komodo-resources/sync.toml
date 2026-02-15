@@ -1,0 +1,13 @@
+[[resource_sync]]
+name = "mohitsharma44/homeops"
+description = "GitOps sync for all Docker infrastructure"
+tags = ["system"]
+[resource_sync.config]
+repo = "mohitsharma44/homeops"
+git_account = "mohitsharma44"
+resource_path = ["docker/komodo-resources/"]
+managed = true
+delete = true
+include_variables = true
+include_user_groups = false
+webhook_enabled = false
