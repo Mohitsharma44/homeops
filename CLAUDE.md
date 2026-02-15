@@ -1,123 +1,57 @@
 # Claude Code Instructions - Homeops Repository
 
 ## What This Repo Is
-FluxCD GitOps repository for a Kubernetes homelab cluster named `minipcs`. Flux handles infrastructure bootstrapping; ArgoCD (deployed by Flux) handles applications.
+GitOps repository for homelab infrastructure. Manages both **Kubernetes** (Flux + ArgoCD) and **Docker** containers (Komodo GitOps) from a single repo with unified secret management (SOPS + age).
 
-## Architecture Pattern
+Docker/Komodo-specific instructions are in `docker/CLAUDE.md` (loaded automatically when working in `docker/`).
+
+## Architecture
 ```
-Git Push → Flux Reconciles → Infrastructure Ready → ArgoCD Deploys Apps
+Kubernetes: Git Push → Flux Reconciles → Infrastructure Ready → ArgoCD Deploys Apps
+Docker:     Git Push → Komodo ResourceSync → pre_deploy (SOPS decrypt) → docker compose up
 ```
 
-Deployment dependency chain defined in `clusters/minipcs/`:
-- `infrastructure.yaml` defines `infra-controllers` and `infra-configs` Kustomizations
-- `apps.yaml` defines `apps` Kustomization (depends on `infra-configs`)
+Kubernetes deployment chain (`clusters/minipcs/`):
+- `infrastructure.yaml` → `infra-controllers` and `infra-configs` Kustomizations
+- `apps.yaml` → `apps` Kustomization (depends on `infra-configs`)
 
 ## Directory Map
 
 ```
-clusters/minipcs/          # START HERE - cluster entry point
-├── flux-instance.yaml     # FluxInstance CRD (operator manages Flux controllers)
-├── kustomization.yaml     # Aggregates flux-instance, infrastructure, apps
-├── infrastructure.yaml    # Defines infra Kustomizations
-└── apps.yaml              # Defines apps Kustomization
-
+clusters/minipcs/          # K8s cluster entry point (Flux)
 infrastructure/
 ├── controllers/           # HelmReleases: cert-manager, metallb, ingress-nginx, rook-ceph
-└── configs/               # Post-install configs (ceph-cluster)
-
+└── configs/               # Post-install configs (ceph-cluster, monitoring secrets)
 apps/
 ├── base/argocd/           # ArgoCD itself (deployed via Flux)
-├── argocd-apps/           # App-of-Apps pattern
-│   ├── root-app.yaml      # Root Application (watches apps/ subdir)
-│   └── apps/              # ArgoCD Application manifests go HERE
-│       └── podinfo.yaml   # Example app
+├── argocd-apps/apps/      # ArgoCD Application manifests go HERE
 └── minipcs/               # Flux overlay (deploys argocd + root-app)
+docker/                    # Docker infrastructure (Komodo GitOps) — see docker/CLAUDE.md
 ```
 
 ## Key Files to Read First
-1. `clusters/minipcs/flux-instance.yaml` - FluxInstance CRD (how Flux is deployed and configured)
-2. `clusters/minipcs/infrastructure.yaml` - Understand the Flux Kustomization structure
-3. `infrastructure/controllers/kustomization.yaml` - See what controllers are deployed
+1. `clusters/minipcs/flux-instance.yaml` - FluxInstance CRD
+2. `clusters/minipcs/infrastructure.yaml` - Flux Kustomization structure
+3. `infrastructure/controllers/kustomization.yaml` - What controllers are deployed
 4. `.sops.yaml` - SOPS encryption configuration
-5. Any `hr.yaml` file - Standard HelmRelease pattern used throughout
 
-## Secrets Handling
+## Secrets (SOPS + age)
 
-**CRITICAL**: Secrets use SOPS + age encryption.
+Both K8s and Docker use the same SOPS + age key pair.
 
-- Config: `.sops.yaml` (encrypts `data`/`stringData` fields only)
+- Config: `.sops.yaml` at repo root
 - Public key: `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk`
-- Private key location: `~/.sops/key.txt`
-- Naming convention: `*secret.yaml`
+- Private key: `~/.sops/key.txt` (local), `/etc/sops/age/keys.txt` (Docker hosts), `sops-age` secret (K8s)
+- K8s: `*secret.yaml` — Flux decrypts in-cluster
+- Docker: `.sops.env`/`.sops.json` next to compose files — Periphery decrypts at deploy time
+- Never commit unencrypted secrets (pre-commit hooks block this)
 
-When creating secrets:
-1. Create YAML with `kind: Secret` and `stringData` field
-2. User must encrypt with: `sops -e -i <file>.yaml`
-3. Never commit unencrypted secrets (pre-commit hooks block this)
-
-When reading encrypted secrets:
-- The encrypted content is visible but not human-readable
-- User can decrypt locally with: `sops -d <file>.yaml`
-
-## Standard File Patterns
-
-Each component typically has:
-- `ns.yaml` - Namespace
-- `repo.yaml` - HelmRepository (source for helm charts)
-- `hr.yaml` - HelmRelease (actual deployment)
-- `kustomization.yaml` - Aggregates the above files
-
-## Adding New Components
-
-### New Infrastructure Controller
 ```bash
-# Create structure
-mkdir -p infrastructure/controllers/<name>
-
-# Required files:
-# - ns.yaml (namespace)
-# - repo.yaml (HelmRepository if new chart source)
-# - hr.yaml (HelmRelease)
-# - kustomization.yaml (references above files)
-
-# Add to parent kustomization
-# Edit: infrastructure/controllers/kustomization.yaml
+sops -e -i path/to/secret         # encrypt
+sops -d path/to/secret            # decrypt (view only)
 ```
 
-### New Application (via ArgoCD App-of-Apps)
-```bash
-# Create ArgoCD Application manifest
-# File: apps/argocd-apps/apps/<name>.yaml
-
-# Template:
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: <name>
-  namespace: argocd
-spec:
-  project: default
-  source:
-    repoURL: <helm-repo-url>
-    chart: <chart-name>
-    targetRevision: "<version>"
-    helm:
-      valuesObject:
-        key: value
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: <target-namespace>
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-
-# Commit and push - ArgoCD auto-syncs via root-app
-```
-
-## Network Context
+## Network
 ```
 IP Range: 192.168.11.0/24
 MetalLB Pool: 192.168.11.88-98
@@ -126,52 +60,34 @@ DNS: 192.168.11.1, 9.9.9.9
 Domain: sharmamohit.com (wildcard cert)
 ```
 
-## Common User Requests
+## K8s File Patterns
 
-**"Add a new app"** → Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
+Each infrastructure component typically has: `ns.yaml`, `repo.yaml` (HelmRepository), `hr.yaml` (HelmRelease), `kustomization.yaml`.
 
-**"Check what's deployed"** →
-- Infrastructure: `infrastructure/controllers/kustomization.yaml`
-- Apps: `apps/argocd-apps/apps/` directory (each .yaml is an app)
+### Adding a New K8s App (ArgoCD)
+Create `apps/argocd-apps/apps/<name>.yaml` — ArgoCD auto-syncs via root-app.
 
-**"Debug deployment issues"** → User should run: `flux get all`, `flux logs --level=error`, or check ArgoCD UI
-
-**"Add a secret"** → Create secret YAML, remind user to run `sops -e -i` before committing
-
-**"Bootstrap a new cluster"** → Refer to README.md bootstrap section
+### Adding a New Infrastructure Controller
+Create `infrastructure/controllers/<name>/` with ns.yaml, repo.yaml, hr.yaml, kustomization.yaml. Add to `infrastructure/controllers/kustomization.yaml`.
 
 ## Gotchas
 
-1. **Flux Kustomization vs kustomization.yaml**: Capital-K `Kustomization` is a Flux CRD. Lowercase `kustomization.yaml` is the standard kustomize file. Both exist in this repo.
+1. **Flux Kustomization vs kustomization.yaml**: Capital-K `Kustomization` is a Flux CRD. Lowercase is standard kustomize.
+2. **App-of-Apps**: ArgoCD Application manifests in `apps/argocd-apps/apps/` — root-app watches this directory.
+3. **Pre-commit auto-encryption**: Files matching `*secret.yaml` get auto-encrypted on commit.
+4. **Rook-Ceph**: `useAllNodes: true` and `useAllDevices: true`.
+5. **cert-manager**: Route53 DNS01 validation needs encrypted secret in `infrastructure/controllers/certmanager/secret.yaml`.
+6. **Flux Operator**: Manages Flux controllers via `FluxInstance` CRD. To upgrade Flux, bump `version` in `flux-instance.yaml`.
+7. **GitHub App auth**: Source-controller uses a GitHub App (secret `flux-system`), not a PAT.
 
-2. **App-of-Apps pattern**: ArgoCD Application manifests live in `apps/argocd-apps/apps/`. The root-app watches this directory and auto-syncs new Applications.
-
-3. **Pre-commit auto-encryption**: Files matching `*secret.yaml` get auto-encrypted on commit via pre-commit hooks.
-
-4. **Rook-Ceph consumes all storage**: Config uses `useAllNodes: true` and `useAllDevices: true`.
-
-5. **cert-manager needs AWS creds**: Route53 DNS01 validation requires the encrypted secret in `infrastructure/controllers/certmanager/secret.yaml`.
-
-6. **Flux Operator manages controllers**: The Flux Operator deploys Flux controllers via the `FluxInstance` CRD. Do not add `gotk-components.yaml` or manually create Flux controller deployments — the operator handles this. To upgrade Flux, bump the `version` in `flux-instance.yaml`.
-
-7. **GitHub App auth**: Source-controller authenticates to GitHub using a GitHub App (secret `flux-system` in `flux-system` namespace), not a PAT.
-
-## Useful Commands for User
+## Commands
 
 ```bash
-# Flux Operator / FluxInstance status
-kubectl -n flux-system get fluxinstance flux
-kubectl -n flux-system describe fluxinstance flux
-
-# Flux status
+# Flux
 flux get all
 flux get kustomizations
 flux get helmreleases -A
-
-# Force sync
 flux reconcile kustomization flux-system --with-source
-
-# Logs
 flux logs --level=error
 
 # SOPS

@@ -1,13 +1,13 @@
 repos:
   - repo: local
     hooks:
-      - id: encrypt-sops-files.sh
+      - id: encrypt-sops-files
         name: check and encrypt unencrypted files
         description: checks and encrypts files containing unencrypted data
         entry: encrypt-sops-files.sh
         language: script
         types: [file]
-        files: (.?secret.yaml)
+        files: (secret\.yaml|\.sops\.(env|json))$
 
   - repo: https://github.com/onedr0p/sops-pre-commit
     rev: v2.1.1

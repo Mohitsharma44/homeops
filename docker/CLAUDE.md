@@ -1,0 +1,75 @@
+# Docker Infrastructure — Komodo GitOps
+
+## How It Works
+Single ResourceSync reads TOML from `komodo-resources/`, manages stacks across 6 hosts via Periphery agents. Secrets decrypted at deploy time by custom periphery image with SOPS+age.
+
+## Directory Layout
+```
+komodo-resources/          # TOML declarations (synced by Komodo)
+├── sync.toml              # ResourceSync self-definition (delete=true)
+├── servers.toml           # 6 host definitions
+├── builds.toml            # Custom periphery image build
+├── procedures.toml        # Scheduled jobs (backup, rebuild, auto-update)
+└── stacks-{host}.toml     # Stack definitions per host
+stacks/                    # Compose files + encrypted secrets
+├── shared/alloy/          # Shared Alloy compose (all 6 hosts)
+└── {host}/{service}/      # Per-host compose + .sops.env
+periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
+```
+
+## Hosts & Stacks (13 total)
+
+| Host | IP | SSH | Stacks |
+|------|----|-----|--------|
+| komodo | 192.168.11.200 | root@komodo | komodo-alloy |
+| nvr | 192.168.11.89 | root@nvr | frigate, nvr-alloy |
+| kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
+| omni | 192.168.11.30 | root@omni | omni, omni-alloy |
+| server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, bookstack, server04-alloy |
+| seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
+
+**Not yet migrated** (server04): Pihole/Unbound, UniFi Controller, Changedetection
+
+## Komodo Access
+- **UI**: https://komodo.sharmamohit.com
+- **API**: http://komodo.sharmamohit.com:9120 (HTTP, not HTTPS)
+- **CLI**: `km`
+- **Periphery**: port 8120 on each host (TLS)
+
+## Secrets (SOPS + age)
+
+`.sops.env` (or `.sops.json`) files live next to each `compose.yaml`. At deploy time, Komodo's `pre_deploy` hook runs `sops-decrypt.sh` on the Periphery agent, decrypting `*.sops.env` → `*.env`. Compose reads via `env_file: .env`.
+
+Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, bookstack, seaweedfs (`s3.sops.json`). Only frigate has no secrets.
+
+## Custom Periphery Image
+`mohitsharma44/komodo-periphery-sops:latest` — upstream Periphery + sops + age + `sops-decrypt.sh`. Built on server04 via `km execute run-build periphery-custom`. Dockerfile at `periphery/Dockerfile`.
+
+## Periphery Compose Locations
+| Host | Path |
+|------|------|
+| komodo | `/opt/komodo/compose.yaml` (bundled with Core) |
+| nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
+| server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
+
+## Adding a New Stack
+1. Create `stacks/{host}/{service}/compose.yaml` + `.sops.env`
+2. Add to `komodo-resources/stacks-{host}.toml` (must include `pre_deploy.path` and `pre_deploy.command = "sops-decrypt.sh"`)
+3. Commit, push, sync, deploy
+
+## Gotchas
+- **pre_deploy.path required**: Must point to the compose directory so `sops-decrypt.sh` finds `.sops.env`. Without it, runs from repo root.
+- **DNS on server04**: Periphery compose needs `dns: ["192.168.11.1"]` — Docker embedded DNS broken.
+- **Age key ownership**: Must be `root:root` with `600` on all hosts. Non-root SSH hosts (server04/seaweedfs) may need `sudo chown`.
+- **ResourceSync self-reference**: `sync.toml` must define itself to avoid self-deletion (`delete=true`).
+- **KASM**: Installer-managed — only Newt is Komodo-managed.
+- **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
+
+## Commands
+```bash
+km execute sync 'mohitsharma44/homeops'   # sync resources from git
+km execute deploy-stack <name>            # deploy a stack
+km list stacks -a                         # check stack status
+km list servers -a                        # check server health
+km execute run-build periphery-custom     # rebuild periphery image
+```
