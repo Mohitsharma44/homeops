@@ -13,7 +13,7 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 │   3-node K8s cluster (minipcs)  │   6 Docker hosts                      │
 │   Infrastructure: MetalLB,      │   Hosts: komodo, nvr, kasm,           │
 │     Ingress, Cert-Manager,      │     omni, server04, seaweedfs         │
-│     Rook-Ceph                   │   12 stacks across all hosts          │
+│     Rook-Ceph                   │   13 stacks across all hosts          │
 │   Apps: Monitoring stack        │   Monitoring: Alloy on every host     │
 │     (Prometheus, Thanos, Loki,  │   Secrets: SOPS + age (pre_deploy)    │
 │     Tempo, Alloy, Grafana)      │                                       │
@@ -112,7 +112,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 
 | Host | Role | Key Services |
 |------|------|-------------|
-| **komodo** | Komodo Core | Core, Periphery, Alloy |
+| **komodo** | Komodo Core | Core (self-managed), Periphery (systemd), Alloy |
 | **nvr** | Video Recording | Frigate (Coral TPU), Alloy |
 | **kasm** | Remote Desktop | KASM Workspaces, Newt, Alloy |
 | **omni** | K8s Management | Siderolabs Omni, Alloy |
@@ -124,7 +124,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 1. Resource definitions (TOML) in `docker/komodo-resources/` declare servers, stacks, builds, and procedures
 2. A single ResourceSync pulls from this repo and creates/updates/deletes Komodo resources
 3. Each stack references a compose file in `docker/stacks/{host}/{service}/`
-4. Secrets are SOPS-encrypted `.sops.env` files decrypted at deploy time by a custom periphery image
+4. Secrets are SOPS-encrypted `.sops.env` files decrypted at deploy time by a custom periphery image (komodo host uses systemd Periphery with native sops+age)
 5. Alloy monitoring runs on every host, pushing metrics/logs to the K8s observability stack
 
 ## Observability
@@ -240,7 +240,7 @@ flux get kustomizations --watch
 
 See [docker/README.md](docker/README.md) for full setup. In short:
 
-1. Komodo Core + Periphery deployed on the komodo host
+1. Komodo Core deployed as self-managed stack; systemd Periphery on komodo host
 2. Custom periphery image (with SOPS + age) deployed on all 6 hosts
 3. Age private key distributed to `/etc/sops/age/keys.txt` on each host
 4. ResourceSync created pointing at `docker/komodo-resources/`

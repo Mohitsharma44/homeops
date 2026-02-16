@@ -6,7 +6,7 @@ Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workf
 
 | Host | IP | OS | SSH | Periphery Compose | Role |
 |------|----|----|-----|-------------------|------|
-| **komodo** | 192.168.11.200 | Ubuntu 24.04 LTS | `root@komodo` | `/opt/komodo/compose.yaml` | Komodo Core + Periphery |
+| **komodo** | 192.168.11.200 | Ubuntu 24.04 LTS | `root@komodo` | systemd service | Komodo Core (self-managed) + systemd Periphery |
 | **nvr** | 192.168.11.89 | Debian 12 (bookworm) | `root@nvr` | `/root/komodo-periphery/compose.yaml` | Frigate NVR |
 | **kasm** | 192.168.11.34 | Ubuntu 24.04 LTS | `root@kasm` | `/root/komodo-periphery/compose.yaml` | KASM Workspaces + Newt |
 | **omni** | 192.168.11.30 | Ubuntu 22.04 LTS | `root@omni` | `/root/komodo-periphery/compose.yaml` | Siderolabs Omni |
@@ -28,8 +28,9 @@ Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workf
    │ komodo  │  │  nvr    │  │  │  kasm    │  │  K8s cluster     ││
    │ .200    │  │  .89    │  │  │  .34     │  │  (minipcs)       ││
    │ Core+   │  │ Frigate │  │  │ KASM     │  │  MetalLB:        ││
-   │ Periph  │  │ Coral   │  │  │ Newt     │  │  .88-.98         ││
-   │ Alloy   │  │ Alloy   │  │  │ Alloy    │  │  Ingress: .90    ││
+   │ sysd    │  │ Coral   │  │  │ Newt     │  │  .88-.98         ││
+   │ Periph  │  │ Alloy   │  │  │ Alloy    │  │  Ingress: .90    ││
+   │ Alloy   │  │         │  │  │          │  │                  ││
    └─────────┘  └─────────┘  │  └──────────┘  └──────────────────┘│
         │                     │                                     │
    ┌────┴────┐  ┌──────────┐ │  ┌────────────┐                    │
@@ -49,17 +50,17 @@ Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workf
 
 **Platform**: Proxmox LXC container (ID 200) — unprivileged, nesting enabled
 
-Runs Komodo Core (the control plane) alongside a Periphery agent. Core manages all other hosts via their Periphery agents.
+Runs Komodo Core (the control plane) as a self-managed stack, alongside systemd Periphery. Core manages all other hosts via their Periphery agents.
 
-| Service | Container | Notes |
-|---------|-----------|-------|
-| Komodo Core | `komodo-core-1` | API on port 9120, UI via Traefik on server04 |
-| FerretDB | `komodo-ferretdb-1` | MongoDB-compatible database for Core |
-| PostgreSQL | `komodo-postgres-1` | Backend for FerretDB |
-| Periphery | `komodo-periphery-1` | Port 8120 (published for Core → self communication) |
+| Service | Container/Service | Notes |
+|---------|-------------------|-------|
+| Komodo Core | `core-core-1` | API on port 9120, UI via Traefik on server04, managed via `komodo-core` stack |
+| FerretDB | `core-ferretdb-1` | MongoDB-compatible database for Core |
+| PostgreSQL | `core-postgres-1` | Backend for FerretDB |
+| Periphery | systemd service | Port 8120 (TLS), config at `/etc/komodo/periphery.config.toml` |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
-**Compose**: `/opt/komodo/compose.yaml` (Core + Periphery + DB in one compose)
+**Compose**: Managed by Komodo stack `komodo-core`
 **Data**: `/etc/komodo/` (stacks, ssl certs, backups)
 **Backups**: Daily at 01:00 to `/etc/komodo/backups/`
 
@@ -169,8 +170,8 @@ Distributed object storage providing S3-compatible API for the observability sta
 Quick reference for restarting periphery agents:
 
 ```bash
-# komodo (bundled with Core)
-ssh root@komodo "cd /opt/komodo && docker compose up -d --force-recreate periphery"
+# komodo (systemd Periphery)
+ssh root@komodo "systemctl restart periphery"
 
 # nvr, kasm, omni (root users)
 ssh root@nvr  "cd /root/komodo-periphery && docker compose up -d --force-recreate"
@@ -188,13 +189,17 @@ ssh mohitsharma44@seaweedfs  "cd ~/komodo-periphery && docker compose up -d --fo
 
 ```bash
 # After building: km execute run-build periphery-custom
-for host in root@komodo root@nvr root@kasm root@omni; do
+for host in root@nvr root@kasm root@omni; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest" &
 done
 for host in mohitsharma44@seaweedfs mohitsharma44@server04; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest" &
 done
 wait
+
+# komodo uses systemd Periphery -- update separately:
+# ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=<new-version>"
+# ssh root@komodo "systemctl restart periphery"
 ```
 
 Then restart each periphery using the commands in the section above.
