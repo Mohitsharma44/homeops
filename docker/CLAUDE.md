@@ -66,6 +66,23 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 - **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
 - **Komodo self-management**: komodo-core is a self-managed stack. Do NOT enable auto_update. Deploy independently via `km execute deploy-stack komodo-core`. The deploy-all-stacks procedure excludes it to prevent self-restart.
 
+## Updating Komodo (Core + Periphery)
+
+Core and Periphery are released together — update both at the same time.
+
+1. Check current vs latest: `km get version` and Komodo UI banner
+2. Bump image tag in `docker/stacks/komodo/core/compose.yaml`
+3. Commit, push, then sync: `km execute sync 'mohitsharma44/homeops'`
+4. Deploy Core: `km execute deploy-stack komodo-core`
+5. Update systemd Periphery on komodo:
+   ```bash
+   ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=<new-version>"
+   ssh root@komodo "systemctl restart periphery"
+   ```
+6. Rebuild custom Docker Periphery for other 5 hosts: `km execute run-build periphery-custom`
+   - Then pull on each host (daily rebuild handles this, or manually trigger)
+7. Verify all healthy: `km list servers -a`
+
 ## Commands
 ```bash
 km execute sync 'mohitsharma44/homeops'   # sync resources from git
