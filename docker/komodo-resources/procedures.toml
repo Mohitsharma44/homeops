@@ -50,5 +50,5 @@ executions = [
 [[procedure.config.stage]]
 name = "Applications"
 executions = [
-  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*" },
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core" },
 ]
