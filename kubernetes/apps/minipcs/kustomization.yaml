@@ -4,5 +4,5 @@ resources:
   # ArgoCD itself (deployed by Flux)
   - argocd
   # NOTE: root-app and ArgoCD Applications are deployed separately
-  # via the apps-config Flux Kustomization (see clusters/minipcs/apps.yaml)
+  # via the apps-config Flux Kustomization (see kubernetes/clusters/minipcs/apps.yaml)
   # to avoid CRD ordering issues on fresh bootstrap

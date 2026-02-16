@@ -22,7 +22,7 @@ spec:
     kind: GitRepository
     url: "https://github.com/Mohitsharma44/homeops.git"
     ref: "refs/heads/main"
-    path: "clusters/minipcs"
+    path: "kubernetes/clusters/minipcs"
     pullSecret: "flux-system"
     provider: github
   kustomize:

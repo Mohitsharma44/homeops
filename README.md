@@ -26,17 +26,18 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 ## Directory Structure
 
 ```
-├── clusters/minipcs/           # K8s cluster entry point (Flux)
-├── infrastructure/
-│   ├── controllers/            # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
-│   └── configs/                # Post-controller configs (ceph-cluster, monitoring namespace)
-│       └── ceph/               # Standalone Ceph resource manifests
-├── apps/
-│   ├── base/argocd/            # ArgoCD itself (deployed by Flux)
-│   ├── argocd-apps/            # App-of-Apps pattern
-│   │   ├── root-app.yaml       # Root Application (watches apps/ directory)
-│   │   └── apps/               # ArgoCD Application + AppProject manifests
-│   └── minipcs/                # Cluster-specific Flux overlay
+├── kubernetes/
+│   ├── clusters/minipcs/       # K8s cluster entry point (Flux)
+│   ├── infrastructure/
+│   │   ├── controllers/        # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
+│   │   └── configs/            # Post-controller configs (ceph-cluster, monitoring namespace)
+│   │       └── ceph/           # Standalone Ceph resource manifests
+│   └── apps/
+│       ├── base/argocd/        # ArgoCD itself (deployed by Flux)
+│       ├── argocd-apps/        # App-of-Apps pattern
+│       │   ├── root-app.yaml   # Root Application (watches apps/ directory)
+│       │   └── apps/           # ArgoCD Application + AppProject manifests
+│       └── minipcs/            # Cluster-specific Flux overlay
 ├── docker/                     # Docker infrastructure (Komodo GitOps)
 │   ├── komodo-resources/       # TOML resource declarations
 │   ├── stacks/                 # Compose files + SOPS-encrypted secrets
@@ -44,7 +45,8 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 └── docs/                       # Additional documentation
     ├── ceph.md                 # Rook-Ceph storage
     ├── monitoring.md           # Observability stack architecture
-    └── docker-hosts.md         # Docker host operational reference
+    ├── docker-hosts.md         # Docker host operational reference
+    └── talos-nodes.md          # Talos node provisioning (Omni)
 ```
 
 ## Kubernetes
@@ -79,7 +81,7 @@ Flux deploys:
 ├── ArgoCD (the tool)
 └── root-app.yaml (ArgoCD Application)
         │
-        └── Watches: apps/argocd-apps/apps/
+        └── Watches: kubernetes/apps/argocd-apps/apps/
                      ├── project-monitoring.yaml → AppProject definition
                      ├── kube-prometheus-stack.yaml → project: monitoring
                      ├── thanos.yaml               → project: monitoring
@@ -90,7 +92,7 @@ Flux deploys:
 ```
 
 **To add a new application:**
-1. Create an ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
+1. Create an ArgoCD Application manifest in `kubernetes/apps/argocd-apps/apps/<name>.yaml`
 2. Set `project:` to the appropriate AppProject (or `default`)
 3. Commit and push - ArgoCD auto-syncs
 
@@ -230,7 +232,7 @@ helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-opera
   --namespace flux-system
 
 # 5. Apply FluxInstance
-kubectl apply -f clusters/minipcs/flux-instance.yaml
+kubectl apply -f kubernetes/clusters/minipcs/flux-instance.yaml
 
 # 6. Watch reconciliation
 flux get kustomizations --watch
@@ -280,13 +282,13 @@ km list servers -a
 ### Adding New Infrastructure
 
 **K8s controller:**
-1. Create directory under `infrastructure/controllers/<name>/`
+1. Create directory under `kubernetes/infrastructure/controllers/<name>/`
 2. Add `ns.yaml`, `repo.yaml`, `hr.yaml`, `kustomization.yaml`
-3. Reference in `infrastructure/controllers/kustomization.yaml`
+3. Reference in `kubernetes/infrastructure/controllers/kustomization.yaml`
 4. Commit and push
 
 **K8s app (ArgoCD):**
-1. Create ArgoCD Application manifest in `apps/argocd-apps/apps/<name>.yaml`
+1. Create ArgoCD Application manifest in `kubernetes/apps/argocd-apps/apps/<name>.yaml`
 2. Set `project:` and commit
 
 **Docker stack:**

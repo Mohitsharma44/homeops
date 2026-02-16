@@ -11,7 +11,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./infrastructure/controllers
+  path: ./kubernetes/infrastructure/controllers
   prune: true
   wait: true
   decryption:
@@ -34,7 +34,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./infrastructure/configs
+  path: ./kubernetes/infrastructure/configs
   prune: true
   decryption:
     provider: sops

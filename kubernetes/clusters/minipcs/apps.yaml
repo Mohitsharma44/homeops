@@ -11,7 +11,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./apps/minipcs
+  path: ./kubernetes/apps/minipcs
   prune: true
   wait: true
   timeout: 5m0s
@@ -33,6 +33,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./apps/argocd-apps
+  path: ./kubernetes/apps/argocd-apps
   prune: true
   timeout: 5m0s

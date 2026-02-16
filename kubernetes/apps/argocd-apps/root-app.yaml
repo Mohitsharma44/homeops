@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://github.com/Mohitsharma44/homeops.git
     targetRevision: main
-    path: apps/argocd-apps/apps
+    path: kubernetes/apps/argocd-apps/apps
     directory:
       recurse: true
   destination:

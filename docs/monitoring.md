@@ -209,7 +209,7 @@ SeaweedFS runs inside a VM on TrueNAS, providing S3-compatible object storage ov
 
 ## Secrets
 
-SOPS-encrypted secrets in `infrastructure/configs/`:
+SOPS-encrypted secrets in `kubernetes/infrastructure/configs/`:
 
 | Secret | Namespace | Keys | Used By |
 |--------|-----------|------|---------|
@@ -269,7 +269,7 @@ The following infrastructure components have ServiceMonitors enabled:
 ### 1. Encrypt secrets with SOPS
 
 ```bash
-cd infrastructure/configs/
+cd kubernetes/infrastructure/configs/
 sops -e -i seaweedfs-s3-secret.yaml
 sops -e -i thanos-objstore-secret.yaml
 ```
