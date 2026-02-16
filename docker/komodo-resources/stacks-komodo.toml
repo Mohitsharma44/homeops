@@ -1,4 +1,17 @@
 [[stack]]
+name = "komodo-core"
+description = "Komodo Core + FerretDB + PostgreSQL (self-managed)"
+tags = ["infrastructure", "komodo"]
+[stack.config]
+server_id = "komodo"
+file_paths = ["docker/stacks/komodo/core/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/komodo/core"
+command = "sops-decrypt.sh"
+
+[[stack]]
 name = "komodo-alloy"
 description = "Grafana Alloy monitoring agent for komodo host"
 tags = ["monitoring", "komodo"]

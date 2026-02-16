@@ -17,11 +17,11 @@ stacks/                    # Compose files + encrypted secrets
 periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 ```
 
-## Hosts & Stacks (12 total)
+## Hosts & Stacks (13 total)
 
 | Host | IP | SSH | Stacks |
 |------|----|-----|--------|
-| komodo | 192.168.11.200 | root@komodo | komodo-alloy |
+| komodo | 192.168.11.200 | root@komodo | komodo-core, komodo-alloy |
 | nvr | 192.168.11.89 | root@nvr | frigate, nvr-alloy |
 | kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
@@ -43,10 +43,12 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 ## Custom Periphery Image
 `mohitsharma44/komodo-periphery-sops:latest` — upstream Periphery + sops + age + `sops-decrypt.sh`. Built on server04 via `km execute run-build periphery-custom`. Dockerfile at `periphery/Dockerfile`.
 
+**Note**: The komodo host uses systemd Periphery with native sops+age installed directly on the host, not the custom Docker image.
+
 ## Periphery Compose Locations
 | Host | Path |
 |------|------|
-| komodo | `/opt/komodo/compose.yaml` (bundled with Core) |
+| komodo | systemd service — `/etc/komodo/periphery.config.toml` |
 | nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
 | server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
 
@@ -62,6 +64,7 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 - **ResourceSync self-reference**: `sync.toml` must define itself to avoid self-deletion (`delete=true`).
 - **KASM**: Installer-managed — only Newt is Komodo-managed.
 - **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
+- **Komodo self-management**: komodo-core is a self-managed stack. Do NOT enable auto_update. Deploy independently via `km execute deploy-stack komodo-core`. The deploy-all-stacks procedure excludes it to prevent self-restart.
 
 ## Commands
 ```bash
@@ -70,4 +73,9 @@ km execute deploy-stack <name>            # deploy a stack
 km list stacks -a                         # check stack status
 km list servers -a                        # check server health
 km execute run-build periphery-custom     # rebuild periphery image
+
+# Systemd Periphery on komodo
+systemctl status periphery               # check periphery status
+systemctl restart periphery              # restart periphery
+journalctl -u periphery -f               # follow periphery logs
 ```

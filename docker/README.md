@@ -21,7 +21,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
     ▼      ▼      ▼      ▼      ▼      ▼
  komodo   nvr   kasm   omni  server04  seaweedfs
  (Core)                        (Build
-  Periphery agents on each host:         Server)
+  systemd Periphery agents on each host:  Server)
   - Runs pre_deploy hooks (sops-decrypt.sh)
   - Executes docker compose up/down
   - Reports container health back to Core
@@ -31,7 +31,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 
 | Host | Address | SSH | Role | Managed Stacks |
 |------|---------|-----|------|----------------|
-| **komodo** | 192.168.11.200 | `root@komodo` | Komodo Core + Periphery | komodo-alloy |
+| **komodo** | 192.168.11.200 | `root@komodo` | Komodo Core (self-managed) + systemd Periphery | komodo-core, komodo-alloy |
 | **nvr** | 192.168.11.89 | `root@nvr` | Video recording | frigate, nvr-alloy |
 | **kasm** | 192.168.11.34 | `root@kasm` | Remote desktop (KASM) | newt, kasm-alloy |
 | **omni** | 192.168.11.30 | `root@omni` | Talos K8s management | omni, omni-alloy |
@@ -49,7 +49,7 @@ For detailed per-host information (OS, containers, hardware, quirks), see [docs/
 
 | Host | Periphery Compose Path |
 |------|----------------------|
-| komodo | `/opt/komodo/compose.yaml` (bundled with Core) |
+| komodo | systemd service — `/etc/komodo/periphery.config.toml` |
 | nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
 | server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
 
@@ -71,6 +71,7 @@ docker/
 │   └── stacks-seaweedfs.toml   # Stacks for seaweedfs host
 ├── stacks/                     # Compose files + encrypted secrets
 │   ├── shared/alloy/           # Shared Alloy monitoring template (all hosts)
+│   ├── komodo/core/            # Komodo Core (self-managed stack)
 │   ├── nvr/frigate/
 │   ├── kasm/newt/
 │   ├── omni/omni/
@@ -138,6 +139,8 @@ FROM ghcr.io/moghtech/komodo-periphery:${PERIPHERY_TAG}
 - **Build server**: server04 (via Komodo's `periphery-custom` build)
 - **Script**: `sops-decrypt.sh` — decrypts all `.sops.env`/`.sops.json`/`.sops.yaml` in the working directory
 
+**Note**: The komodo host uses systemd Periphery with native sops+age installed directly on the host, not the custom Docker image.
+
 ### Rebuilding the Image
 
 Via Komodo UI or CLI:
@@ -147,8 +150,8 @@ km execute run-build periphery-custom
 
 Then pull and restart periphery on all hosts:
 ```bash
-# Root hosts
-for host in root@komodo root@nvr root@kasm root@omni; do
+# Root hosts (excluding komodo which uses systemd Periphery)
+for host in root@nvr root@kasm root@omni; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest"
 done
 
@@ -156,6 +159,10 @@ done
 for host in mohitsharma44@seaweedfs mohitsharma44@server04; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest"
 done
+
+# komodo uses systemd Periphery -- update separately:
+# ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=<new-version>"
+# ssh root@komodo "systemctl restart periphery"
 ```
 
 ## Alloy Monitoring
@@ -263,6 +270,13 @@ curl -s -H "X-API-KEY: $KEY" -H "X-API-SECRET: $SECRET" \
 | Periphery | Port 8120 on each host (TLS) |
 
 ## Known Issues and Workarounds
+
+### Komodo Self-Management
+
+The `komodo-core` stack is self-managed by Komodo. When Core redeploys, it restarts itself but systemd Periphery survives to bring it back. Constraints:
+- `auto_update` is NOT enabled -- Core updates must be deliberate
+- `deploy-all-stacks` procedure excludes `komodo-core` to prevent self-restart mid-procedure
+- Deploy independently: `km execute deploy-stack komodo-core`
 
 ### AppArmor on Komodo LXC
 
