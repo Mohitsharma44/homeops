@@ -11,28 +11,29 @@ Kubernetes: Git Push → Flux Reconciles → Infrastructure Ready → ArgoCD Dep
 Docker:     Git Push → Komodo ResourceSync → pre_deploy (SOPS decrypt) → docker compose up
 ```
 
-Kubernetes deployment chain (`clusters/minipcs/`):
+Kubernetes deployment chain (`kubernetes/clusters/minipcs/`):
 - `infrastructure.yaml` → `infra-controllers` and `infra-configs` Kustomizations
 - `apps.yaml` → `apps` Kustomization (depends on `infra-configs`)
 
 ## Directory Map
 
 ```
-clusters/minipcs/          # K8s cluster entry point (Flux)
-infrastructure/
-├── controllers/           # HelmReleases: cert-manager, metallb, ingress-nginx, rook-ceph
-└── configs/               # Post-install configs (ceph-cluster, monitoring secrets)
-apps/
-├── base/argocd/           # ArgoCD itself (deployed via Flux)
-├── argocd-apps/apps/      # ArgoCD Application manifests go HERE
-└── minipcs/               # Flux overlay (deploys argocd + root-app)
+kubernetes/
+├── clusters/minipcs/      # K8s cluster entry point (Flux)
+├── infrastructure/
+│   ├── controllers/       # HelmReleases: cert-manager, metallb, ingress-nginx, rook-ceph
+│   └── configs/           # Post-install configs (ceph-cluster, monitoring secrets)
+└── apps/
+    ├── base/argocd/       # ArgoCD itself (deployed via Flux)
+    ├── argocd-apps/apps/  # ArgoCD Application manifests go HERE
+    └── minipcs/           # Flux overlay (deploys argocd + root-app)
 docker/                    # Docker infrastructure (Komodo GitOps) — see docker/CLAUDE.md
 ```
 
 ## Key Files to Read First
-1. `clusters/minipcs/flux-instance.yaml` - FluxInstance CRD
-2. `clusters/minipcs/infrastructure.yaml` - Flux Kustomization structure
-3. `infrastructure/controllers/kustomization.yaml` - What controllers are deployed
+1. `kubernetes/clusters/minipcs/flux-instance.yaml` - FluxInstance CRD
+2. `kubernetes/clusters/minipcs/infrastructure.yaml` - Flux Kustomization structure
+3. `kubernetes/infrastructure/controllers/kustomization.yaml` - What controllers are deployed
 4. `.sops.yaml` - SOPS encryption configuration
 
 ## Secrets (SOPS + age)
@@ -65,18 +66,18 @@ Domain: sharmamohit.com (wildcard cert)
 Each infrastructure component typically has: `ns.yaml`, `repo.yaml` (HelmRepository), `hr.yaml` (HelmRelease), `kustomization.yaml`.
 
 ### Adding a New K8s App (ArgoCD)
-Create `apps/argocd-apps/apps/<name>.yaml` — ArgoCD auto-syncs via root-app.
+Create `kubernetes/apps/argocd-apps/apps/<name>.yaml` — ArgoCD auto-syncs via root-app.
 
 ### Adding a New Infrastructure Controller
-Create `infrastructure/controllers/<name>/` with ns.yaml, repo.yaml, hr.yaml, kustomization.yaml. Add to `infrastructure/controllers/kustomization.yaml`.
+Create `kubernetes/infrastructure/controllers/<name>/` with ns.yaml, repo.yaml, hr.yaml, kustomization.yaml. Add to `kubernetes/infrastructure/controllers/kustomization.yaml`.
 
 ## Gotchas
 
 1. **Flux Kustomization vs kustomization.yaml**: Capital-K `Kustomization` is a Flux CRD. Lowercase is standard kustomize.
-2. **App-of-Apps**: ArgoCD Application manifests in `apps/argocd-apps/apps/` — root-app watches this directory.
+2. **App-of-Apps**: ArgoCD Application manifests in `kubernetes/apps/argocd-apps/apps/` — root-app watches this directory.
 3. **Pre-commit auto-encryption**: Files matching `*secret.yaml` get auto-encrypted on commit.
 4. **Rook-Ceph**: `useAllNodes: true` and `useAllDevices: true`.
-5. **cert-manager**: Route53 DNS01 validation needs encrypted secret in `infrastructure/controllers/certmanager/secret.yaml`.
+5. **cert-manager**: Route53 DNS01 validation needs encrypted secret in `kubernetes/infrastructure/controllers/certmanager/secret.yaml`.
 6. **Flux Operator**: Manages Flux controllers via `FluxInstance` CRD. To upgrade Flux, bump `version` in `flux-instance.yaml`.
 7. **GitHub App auth**: Source-controller uses a GitHub App (secret `flux-system`), not a PAT.
 

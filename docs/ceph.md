@@ -10,16 +10,16 @@ Rook-Ceph is split into three parts to avoid Helm lifecycle issues with immutabl
 
 | Part | Managed By | Location |
 |------|-----------|----------|
-| Rook operator (v1.19.x) | Flux HelmRelease | `infrastructure/controllers/rook-ceph/` |
-| CephCluster | Flux HelmRelease (`rook-ceph-cluster`) | `infrastructure/configs/ceph-cluster.yaml` |
-| Storage resources | Flux Kustomization (standalone YAML) | `infrastructure/configs/ceph/` |
+| Rook operator (v1.19.x) | Flux HelmRelease | `kubernetes/infrastructure/controllers/rook-ceph/` |
+| CephCluster | Flux HelmRelease (`rook-ceph-cluster`) | `kubernetes/infrastructure/configs/ceph-cluster.yaml` |
+| Storage resources | Flux Kustomization (standalone YAML) | `kubernetes/infrastructure/configs/ceph/` |
 
 **Why standalone manifests?** StorageClass parameters (like `region`) are immutable in Kubernetes. When the Helm chart renders a StorageClass with different parameters during an upgrade, `helm upgrade` fails. By managing CephBlockPool, CephFilesystem, CephObjectStore, and their StorageClasses as standalone manifests outside Helm, Flux applies them independently and avoids this problem.
 
 ## Storage Resources
 
 ```
-infrastructure/configs/ceph/
+kubernetes/infrastructure/configs/ceph/
 ├── ceph-blockpool.yaml        # CephBlockPool + ceph-block StorageClass (default)
 ├── ceph-filesystem.yaml       # CephFilesystem + SubVolumeGroup + ceph-filesystem StorageClass
 ├── ceph-objectstore.yaml      # CephObjectStore (erasure-coded) + ceph-bucket StorageClass
