@@ -60,6 +60,7 @@ services:
       TZ: America/Vancouver
     volumes:
       - /etc/komodo/backups:/backups
+      - /etc/resolv.conf:/etc/resolv.conf:ro
 
 volumes:
   postgres-data:
