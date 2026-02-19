@@ -51,3 +51,12 @@ tags = ["bare-metal", "storage"]
 address = "https://seaweedfs.sharmamohit.com:8120"
 region = "HomeLab"
 enabled = true
+
+[[server]]
+name = "racknerd-aegis"
+description = "RackNerd VPS — Pangolin gateway, CrowdSec, identity providers"
+tags = ["vps", "gateway"]
+[server.config]
+address = "https://periphery.private.sharmamohit.com:8120"
+region = "VPS"
+enabled = true
