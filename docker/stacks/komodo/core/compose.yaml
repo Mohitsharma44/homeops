@@ -58,9 +58,10 @@ services:
       KOMODO_MONITORING_INTERVAL: "15-sec"
       KOMODO_RESOURCE_POLL_INTERVAL: "1-hr"
       TZ: America/Vancouver
+    dns:
+      - 100.96.128.1
     volumes:
       - /etc/komodo/backups:/backups
-      - /etc/resolv.conf:/etc/resolv.conf:ro
 
 volumes:
   postgres-data:
