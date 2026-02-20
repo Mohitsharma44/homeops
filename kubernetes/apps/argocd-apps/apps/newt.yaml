@@ -13,12 +13,19 @@ spec:
     targetRevision: "1.1.0"
     helm:
       valuesObject:
-        auth:
-          existingSecretName: newt-credentials
-          keys:
-            endpointKey: PANGOLIN_ENDPOINT
-            idKey: NEWT_ID
-            secretKey: NEWT_SECRET
+        global:
+          image:
+            tag: "1.9.0"
+        newtInstances:
+          - name: homelab-k8s
+            auth:
+              existingSecretName: newt-credentials
+              keys:
+                endpointKey: PANGOLIN_ENDPOINT
+                idKey: NEWT_ID
+                secretKey: NEWT_SECRET
+            service:
+              enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: pangolin
