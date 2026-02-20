@@ -1,0 +1,43 @@
+# TCP Passthrough for HTTPS traffic (port 443)
+# Main Traefik passes encrypted traffic to Pangolin Traefik without decrypting
+# Pangolin Traefik handles SSL termination and certificate management
+tcp:
+  routers:
+    # TCP passthrough for ALL *.proxy.sharmamohit.com domains (HTTPS)
+    pangolin-tcp-router:
+      rule: "HostSNIRegexp(`^[a-zA-Z0-9-]+\\.proxy\\.sharmamohit\\.com$`) || HostSNI(`pangolin.proxy.sharmamohit.com`) || HostSNI(`proxy.sharmamohit.com`)"
+      service: pangolin-traefik-tcp
+      entryPoints:
+        - websecure
+      tls:
+        passthrough: true
+
+  services:
+    pangolin-traefik-tcp:
+      loadBalancer:
+        servers:
+          - address: "gerbil:443"
+
+# HTTP Forward for port 80 (ACME challenges and redirects)
+# Main Traefik forwards HTTP traffic to Pangolin Traefik for:
+# - ACME HTTP-01 challenge responses (.well-known/acme-challenge/*)
+# - HTTP to HTTPS redirects (handled by Pangolin Traefik)
+http:
+  routers:
+    pangolin-http-forward:
+      rule: "HostRegexp(`^[a-zA-Z0-9-]+\\.proxy\\.sharmamohit\\.com$`) || Host(`pangolin.proxy.sharmamohit.com`) || Host(`proxy.sharmamohit.com`)"
+      service: pangolin-traefik-http
+      entryPoints:
+        - web
+
+  services:
+    pangolin-traefik-http:
+      loadBalancer:
+        servers:
+          - url: "http://gerbil:80"
+        passHostHeader: true
+        healthCheck:
+          path: "/ping"
+          port: 8081
+          interval: "10s"
+          timeout: "3s"

@@ -1,0 +1,16 @@
+services:
+  periphery:
+    image: mohitsharma44/komodo-periphery-sops:latest
+    container_name: periphery
+    restart: unless-stopped
+    networks:
+      - newt-periphery
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/sops/age:/etc/sops/age:ro
+    environment:
+      SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
+
+networks:
+  newt-periphery:
+    external: true

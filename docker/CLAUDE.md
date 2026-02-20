@@ -1,13 +1,13 @@
 # Docker Infrastructure — Komodo GitOps
 
 ## How It Works
-Single ResourceSync reads TOML from `komodo-resources/`, manages stacks across 6 hosts via Periphery agents. Secrets decrypted at deploy time by custom periphery image with SOPS+age.
+Single ResourceSync reads TOML from `komodo-resources/`, manages stacks across 7 hosts via Periphery agents. Secrets decrypted at deploy time by custom periphery image with SOPS+age.
 
 ## Directory Layout
 ```
 komodo-resources/          # TOML declarations (synced by Komodo)
 ├── sync.toml              # ResourceSync self-definition (delete=true)
-├── servers.toml           # 6 host definitions
+├── servers.toml           # 7 host definitions
 ├── builds.toml            # Custom periphery image build
 ├── procedures.toml        # Scheduled jobs (backup, rebuild, auto-update)
 └── stacks-{host}.toml     # Stack definitions per host
@@ -17,7 +17,7 @@ stacks/                    # Compose files + encrypted secrets
 periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 ```
 
-## Hosts & Stacks (13 total)
+## Hosts & Stacks (19 total)
 
 | Host | IP | SSH | Stacks |
 |------|----|-----|--------|
@@ -27,6 +27,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
 | server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, server04-alloy |
 | seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
+| racknerd-aegis | 23.94.73.98 | root@hs (port 2244) | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, racknerd-aegis-alloy |
 
 ## Komodo Access
 - **UI**: https://komodo.sharmamohit.com
@@ -38,7 +39,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 
 `.sops.env` (or `.sops.json`) files live next to each `compose.yaml`. At deploy time, Komodo's `pre_deploy` hook runs `sops-decrypt.sh` on the Periphery agent, decrypting `*.sops.env` → `*.env`. Compose reads via `env_file: .env`.
 
-Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, seaweedfs (`s3.sops.json`). Only frigate has no secrets.
+Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, seaweedfs (`s3.sops.json`), aegis-gateway, aegis-pangolin, aegis-identity, aegis-newt. Only frigate and aegis-periphery have no secrets.
 
 ## Custom Periphery Image
 `mohitsharma44/komodo-periphery-sops:latest` — upstream Periphery + sops + age + `sops-decrypt.sh`. Built on server04 via `km execute run-build periphery-custom`. Dockerfile at `periphery/Dockerfile`.
@@ -51,6 +52,7 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 | komodo | systemd service — `/etc/komodo/periphery.config.toml` |
 | nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
 | server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
+| racknerd-aegis | Komodo-managed stack (`aegis-periphery`) — isolated on `newt-periphery` network |
 
 ## Adding a New Stack
 1. Create `stacks/{host}/{service}/compose.yaml` + `.sops.env`
@@ -65,6 +67,9 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 - **KASM**: Installer-managed — only Newt is Komodo-managed.
 - **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
 - **Komodo self-management**: komodo-core is a self-managed stack. Do NOT enable auto_update. Deploy independently via `km execute deploy-stack komodo-core`. The deploy-all-stacks procedure excludes it to prevent self-restart.
+- **VPS tunnel-critical stacks**: `aegis-pangolin`, `aegis-newt`, `aegis-periphery` are excluded from batch deploy (same reason as komodo-core — redeploying severs the management tunnel). Use `km execute deploy-vps-infra` for ordered VPS deployment.
+- **VPS Pangolin connectivity**: Komodo reaches VPS Periphery via Pangolin private resource tunnel (`periphery.private.sharmamohit.com:8120`). A Machine Client on komodo (`/opt/pangolin-client/`) provides the WireGuard route. If the tunnel is down, use SSH (`ssh hs`) as the emergency backdoor.
+- **VPS network segmentation**: VPS uses multi-network isolation. Only containers needing WAN access touch `traefik-public` or `pangolin-internal`. Periphery is isolated on `newt-periphery` only (no ports published). LLDAP is on `identity-internal` only (PocketID bridges both networks).
 
 ## Updating Komodo (Core + Periphery)
 
@@ -79,7 +84,7 @@ Core and Periphery are released together — update both at the same time.
    ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=<new-version>"
    ssh root@komodo "systemctl restart periphery"
    ```
-6. Rebuild custom Docker Periphery for other 5 hosts: `km execute run-build periphery-custom`
+6. Rebuild custom Docker Periphery for other 6 hosts: `km execute run-build periphery-custom`
    - Then pull on each host (daily rebuild handles this, or manually trigger)
 7. Verify all healthy: `km list servers -a`
 
@@ -90,6 +95,7 @@ km execute deploy-stack <name>            # deploy a stack
 km list stacks -a                         # check stack status
 km list servers -a                        # check server health
 km execute run-build periphery-custom     # rebuild periphery image
+km execute deploy-vps-infra              # deploy VPS stacks in order
 
 # Systemd Periphery on komodo
 systemctl status periphery               # check periphery status

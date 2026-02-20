@@ -50,5 +50,41 @@ executions = [
 [[procedure.config.stage]]
 name = "Applications"
 executions = [
-  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core" },
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core|aegis-pangolin|aegis-newt|aegis-periphery" },
+]
+
+[[procedure]]
+name = "deploy-vps-infra"
+description = "Deploy VPS infrastructure stacks in correct order (gateway → pangolin → newt → periphery → identity + monitoring)"
+tags = ["deploy", "racknerd-aegis"]
+
+[[procedure.config.stage]]
+name = "Gateway"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-gateway" },
+]
+
+[[procedure.config.stage]]
+name = "Pangolin"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-pangolin" },
+]
+
+[[procedure.config.stage]]
+name = "Tunnel Agent"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-newt" },
+]
+
+[[procedure.config.stage]]
+name = "Management Agent"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-periphery" },
+]
+
+[[procedure.config.stage]]
+name = "Identity and Monitoring"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-identity" },
+  { execution.type = "DeployStack", execution.params.stack = "racknerd-aegis-alloy" },
 ]

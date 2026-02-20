@@ -1,0 +1,77 @@
+[[stack]]
+name = "aegis-gateway"
+description = "Main Traefik reverse proxy + CrowdSec IDS/IPS"
+tags = ["infrastructure", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/aegis-gateway/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/aegis-gateway"
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "aegis-pangolin"
+description = "Pangolin reverse tunnel server + Gerbil WireGuard + inner Traefik"
+tags = ["networking", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/pangolin/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/pangolin"
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "aegis-identity"
+description = "LLDAP directory + PocketID OIDC provider"
+tags = ["security", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/identity/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/identity"
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "aegis-periphery"
+description = "Komodo Periphery agent (SOPS+age) — isolated on newt-periphery network"
+tags = ["infrastructure", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/periphery/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+
+[[stack]]
+name = "aegis-newt"
+description = "Newt agent — connects to Pangolin for private resource tunneling"
+tags = ["networking", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/newt/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/newt"
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "racknerd-aegis-alloy"
+description = "Grafana Alloy monitoring agent for racknerd-aegis VPS"
+tags = ["monitoring", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+environment = """
+HOSTNAME=racknerd-aegis
+"""
+[stack.config.pre_deploy]
+path = "docker/stacks/shared/alloy"
+command = "sops-decrypt.sh"
