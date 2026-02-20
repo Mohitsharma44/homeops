@@ -15,16 +15,18 @@ http:
           # Decisions cached locally, updated every 60s
           crowdsecMode: stream
           updateIntervalSeconds: 60
-          # Trust internal Docker networks for X-Forwarded-For
+          # Trust internal Docker networks and Pangolin WireGuard for X-Forwarded-For
           forwardedHeadersTrustedIPs:
             - 10.0.0.0/8
             - 172.16.0.0/12
             - 192.168.0.0/16
+            - 100.64.0.0/10  # CGNAT range (RFC 6598) — Pangolin WireGuard tunnels, not internet-routable
             - 127.0.0.1/32
           # Client IP extraction settings
           clientTrustedIPs:
             - 10.0.0.0/8
             - 172.16.0.0/12
             - 192.168.0.0/16
+            - 100.64.0.0/10  # CGNAT range (RFC 6598) — Pangolin WireGuard tunnels, not internet-routable
           crowdsecLapiTLSInsecureVerify: false
           logLevel: INFO
