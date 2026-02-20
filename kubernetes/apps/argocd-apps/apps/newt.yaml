@@ -18,6 +18,7 @@ spec:
             tag: "1.9.0"
         newtInstances:
           - name: homelab-k8s
+            enabled: true
             auth:
               existingSecretName: newt-credentials
               keys:
