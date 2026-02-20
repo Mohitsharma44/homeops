@@ -1,0 +1,71 @@
+services:
+  lldap:
+    image: lldap/lldap:stable
+    container_name: lldap
+    restart: unless-stopped
+    networks:
+      - identity-internal
+    environment:
+      LLDAP_LDAP_BASE_DN: ${LDAP_BASE_DN}
+      LLDAP_LDAP_USER_PASS: ${LLDAP_ADMIN_PASSWORD}
+      LLDAP_JWT_SECRET: ${LLDAP_JWT_SECRET}
+      LLDAP_LDAP_ALLOW_ANON_READ: "false"
+    volumes:
+      - lldap-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:17170/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  pocketid:
+    image: ghcr.io/pocket-id/pocket-id:v2
+    container_name: pocketid
+    restart: unless-stopped
+    networks:
+      - pangolin-internal
+      - identity-internal
+    depends_on:
+      lldap:
+        condition: service_healthy
+    environment:
+      APP_URL: "https://pocketid.proxy.sharmamohit.com"
+      TRUST_PROXY: "true"
+      ENCRYPTION_KEY: ${POCKETID_ENCRYPTION_KEY}
+      LDAP_ENABLED: "true"
+      LDAP_URL: "ldap://lldap:3890"
+      LDAP_BASE: ${LDAP_BASE_DN}
+      LDAP_BIND_DN: "uid=admin,ou=people,${LDAP_BASE_DN}"
+      LDAP_BIND_PASSWORD: ${LLDAP_ADMIN_PASSWORD}
+      LDAP_USER_SEARCH_FILTER: "(objectClass=person)"
+      LDAP_ATTRIBUTE_USER_UNIQUE_IDENTIFIER: "uid"
+      LDAP_ATTRIBUTE_USER_USERNAME: "uid"
+      LDAP_ATTRIBUTE_USER_EMAIL: "mail"
+      LDAP_ATTRIBUTE_USER_FIRST_NAME: "givenName"
+      LDAP_ATTRIBUTE_USER_LAST_NAME: "sn"
+      LDAP_USER_GROUP_SEARCH_FILTER: "(objectClass=groupOfNames)"
+      LDAP_ATTRIBUTE_GROUP_UNIQUE_IDENTIFIER: "cn"
+      LDAP_ATTRIBUTE_GROUP_NAME: "cn"
+      LDAP_ATTRIBUTE_GROUP_MEMBER: "member"
+      LDAP_ADMIN_GROUP_NAME: "pocketid_admins"
+    volumes:
+      - pocketid-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1411/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  pangolin-internal:
+    external: true
+  identity-internal:
+    driver: bridge
+
+volumes:
+  lldap-data:
+    external: true
+    name: pangolin-identity_lldap-data
+  pocketid-data:
+    external: true
+    name: pangolin-identity_pocketid-data

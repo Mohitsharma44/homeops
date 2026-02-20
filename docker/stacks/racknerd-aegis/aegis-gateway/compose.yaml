@@ -1,0 +1,95 @@
+services:
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: aegis-crowdsec
+    restart: unless-stopped
+    networks:
+      - traefik-public
+    environment:
+      TZ: America/New_York
+      COLLECTIONS: "crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/base-http-scenarios"
+      BOUNCER_KEY_traefik: ${CROWDSEC_BOUNCER_KEY}
+    volumes:
+      - crowdsec-data:/var/lib/crowdsec/data
+      - crowdsec-config:/etc/crowdsec
+      - ./config/crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro
+      - ./config/crowdsec/threathive-import.sh:/usr/local/bin/threathive-import.sh:ro
+      - traefik-logs:/var/log/traefik:ro
+      - /opt/aegis/pangolin/config/traefik/logs:/var/log/pangolin-traefik:ro
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  traefik:
+    image: traefik:v3.6.1
+    container_name: aegis-traefik
+    restart: unless-stopped
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    networks:
+      - traefik-public
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=traefik-public
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.route53.acme.dnschallenge=true
+      - --certificatesresolvers.route53.acme.dnschallenge.provider=route53
+      - --certificatesresolvers.route53.acme.dnschallenge.propagation.delayBeforeChecks=0
+      - --certificatesresolvers.route53.acme.dnschallenge.propagation.disableChecks=true
+      - --certificatesresolvers.route53.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --certificatesresolvers.route53.acme.email=mohitsharma44@gmail.com
+      - --certificatesresolvers.route53.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+      - --certificatesresolvers.route53.acme.storage=/letsencrypt/acme.json
+      - --api.dashboard=true
+      - --api.insecure=false
+      - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.filepath=/var/log/traefik/access.log
+      - --accesslog.format=json
+      - --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+      - --experimental.plugins.crowdsec-bouncer.version=v1.3.5
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      TZ: America/New_York
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_REGION: us-east-1
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_HOSTED_ZONE_ID: Z20MFT717KZF32
+      CROWDSEC_BOUNCER_KEY: ${CROWDSEC_BOUNCER_KEY}
+    volumes:
+      - ./config/dynamic:/etc/traefik/dynamic:ro
+      - /opt/aegis/gateway/letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-logs:/var/log/traefik
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.dashboard.rule: "Host(`traefik.proxy.sharmamohit.com`)"
+      traefik.http.routers.dashboard.service: "api@internal"
+      traefik.http.routers.dashboard.entrypoints: "websecure"
+      traefik.http.routers.dashboard.tls.certresolver: "route53"
+      traefik.http.routers.dashboard.middlewares: "crowdsec@file"
+
+volumes:
+  crowdsec-data:
+    external: true
+    name: aegis-gateway_crowdsec-data
+  crowdsec-config:
+    external: true
+    name: aegis-gateway_crowdsec-config
+  traefik-logs:
+    external: true
+    name: aegis-gateway_traefik-logs
+
+networks:
+  traefik-public:
+    external: true

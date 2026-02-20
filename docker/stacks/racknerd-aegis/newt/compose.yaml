@@ -1,0 +1,13 @@
+services:
+  newt:
+    image: fosrl/newt:1.9.0
+    container_name: pangolin-newt
+    restart: unless-stopped
+    networks:
+      - newt-periphery
+    env_file:
+      - .env
+
+networks:
+  newt-periphery:
+    external: true

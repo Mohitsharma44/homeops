@@ -1,0 +1,32 @@
+# CrowdSec Bouncer Middleware Configuration
+# Applied to HTTP routes where Traefik terminates TLS
+
+http:
+  middlewares:
+    crowdsec:
+      plugin:
+        crowdsec-bouncer:
+          enabled: true
+          crowdsecLapiScheme: http
+          crowdsecLapiHost: aegis-crowdsec:8080
+          # API key must match BOUNCER_KEY_traefik in CrowdSec container
+          crowdsecLapiKey: "{{ env \"CROWDSEC_BOUNCER_KEY\" }}"
+          # Use streaming mode for better performance
+          # Decisions cached locally, updated every 60s
+          crowdsecMode: stream
+          updateIntervalSeconds: 60
+          # Trust internal Docker networks and Pangolin WireGuard for X-Forwarded-For
+          forwardedHeadersTrustedIPs:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 100.64.0.0/10  # CGNAT range (RFC 6598) — Pangolin WireGuard tunnels, not internet-routable
+            - 127.0.0.1/32
+          # Client IP extraction settings
+          clientTrustedIPs:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 100.64.0.0/10  # CGNAT range (RFC 6598) — Pangolin WireGuard tunnels, not internet-routable
+          crowdsecLapiTLSInsecureVerify: false
+          logLevel: INFO
