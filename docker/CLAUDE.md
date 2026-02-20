@@ -27,7 +27,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
 | server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, server04-alloy |
 | seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
-| racknerd-aegis | 23.94.73.98 | root@hs (port 2244) | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, racknerd-aegis-alloy |
+| racknerd-aegis | 23.94.73.98 | root@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, racknerd-aegis-alloy |
 
 ## Komodo Access
 - **UI**: https://komodo.sharmamohit.com
