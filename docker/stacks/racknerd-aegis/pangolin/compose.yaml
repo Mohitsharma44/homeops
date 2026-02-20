@@ -7,8 +7,8 @@ services:
       - pangolin-internal
     volumes:
       - /opt/aegis/pangolin/config:/app/config
-      - pangolin-data:/var/certificates
-      - pangolin-data:/var/dynamic
+      - pangolin-certificates:/var/certificates
+      - pangolin-dynamic:/var/dynamic
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
       interval: 10s
@@ -57,13 +57,12 @@ services:
       - /opt/aegis/pangolin/config/traefik:/etc/traefik:ro
       - /opt/aegis/pangolin/config/letsencrypt:/letsencrypt
       - /opt/aegis/pangolin/config/traefik/logs:/var/log/traefik
-      - pangolin-data:/var/certificates:ro
-      - pangolin-data:/var/dynamic:ro
+      - pangolin-certificates:/var/certificates:ro
+      - pangolin-dynamic:/var/dynamic:ro
 
 volumes:
-  pangolin-data:
-    external: true
-    name: pangolin_pangolin-data
+  pangolin-certificates:
+  pangolin-dynamic:
 
 networks:
   pangolin-internal:
