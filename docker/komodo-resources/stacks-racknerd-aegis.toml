@@ -83,7 +83,7 @@ file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
-HOSTNAME=racknerd-aegis
+INSTANCE_NAME=racknerd-aegis
 PROMETHEUS_URL=http://k8s-prometheus.private.sharmamohit.com:9090/api/v1/write
 LOKI_URL=http://k8s-loki.private.sharmamohit.com:3100/loki/api/v1/push
 """

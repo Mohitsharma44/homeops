@@ -21,7 +21,7 @@ file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
-HOSTNAME=komodo
+INSTANCE_NAME=komodo
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
