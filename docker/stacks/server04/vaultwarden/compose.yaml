@@ -35,6 +35,33 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  backup:
+    image: alpine:3.21
+    container_name: vaultwarden-backup
+    restart: unless-stopped
+    dns:
+      - 9.9.9.9
+    volumes:
+      - ./vw-data:/data:ro
+      - /opt/backups/vaultwarden:/backups
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache sqlite curl &&
+        echo "$${CRON_SCHEDULE} /usr/local/bin/backup.sh > /proc/1/fd/1 2>/proc/1/fd/2" | crontab - &&
+        crond -f -l 2
+    environment:
+      - CRON_SCHEDULE=0 2 * * *
+      - RETENTION_DAYS=180
+      - WEBDAV_URL=http://192.168.11.133:7333/mohitsharma44/backups/server04/vaultwarden
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   traefik_proxy:
     external: true
