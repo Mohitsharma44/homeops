@@ -30,6 +30,10 @@ services:
       - --stability.level=generally-available
     env_file:
       - .env
+    environment:
+      HOSTNAME: ${HOSTNAME:-}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-https://prometheus.sharmamohit.com/api/v1/write}
+      LOKI_URL: ${LOKI_URL:-https://loki.sharmamohit.com/loki/api/v1/push}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:12345/-/ready"]
