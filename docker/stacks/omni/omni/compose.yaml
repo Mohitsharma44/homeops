@@ -37,3 +37,8 @@ services:
       --enable-break-glass-configs
       --initial-users=${INITIAL_USER_EMAILS}
       ${AUTH}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

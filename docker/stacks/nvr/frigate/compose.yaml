@@ -23,3 +23,8 @@ services:
       - "8554:8554"
       - "8555:8555/tcp"
       - "8555:8555/udp"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

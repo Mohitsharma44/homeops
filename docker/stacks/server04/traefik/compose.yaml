@@ -52,6 +52,11 @@ services:
       - traefik.http.middlewares.cors.headers.accesscontrolmaxage=100
       - traefik.http.middlewares.cors.headers.addvaryheader=true
       - traefik.http.services.dashboard@internal.loadbalancer.server.port=8080
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   traefik_proxy:

@@ -24,6 +24,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   traefik:
     image: traefik:v3.6.1
@@ -82,6 +87,11 @@ services:
       traefik.http.routers.dashboard.entrypoints: "websecure"
       traefik.http.routers.dashboard.tls.certresolver: "route53"
       traefik.http.routers.dashboard.middlewares: "crowdsec@file"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   crowdsec-data:

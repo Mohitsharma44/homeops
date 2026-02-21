@@ -8,3 +8,8 @@ services:
       PANGOLIN_ENDPOINT: https://pangolin.proxy.sharmamohit.com
     security_opt:
       - "no-new-privileges:true"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

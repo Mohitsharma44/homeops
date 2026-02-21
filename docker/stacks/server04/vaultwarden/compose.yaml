@@ -33,6 +33,11 @@ services:
       - traefik.http.routers.bitwarden-websocket.rule=Host(`bitwarden.sharmamohit.com`) && Path(`/notifications/hub`)
       - traefik.http.routers.bitwarden-websocket.service=bitwarden-websocket
       - traefik.http.services.bitwarden-websocket.loadbalancer.server.port=3012
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   traefik_proxy:
