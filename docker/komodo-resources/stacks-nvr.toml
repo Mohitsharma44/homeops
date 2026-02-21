@@ -18,7 +18,7 @@ file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
-HOSTNAME=nvr
+INSTANCE_NAME=nvr
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"

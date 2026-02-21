@@ -21,7 +21,7 @@ file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
-HOSTNAME=seaweedfs
+INSTANCE_NAME=seaweedfs
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"

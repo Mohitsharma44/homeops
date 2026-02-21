@@ -1,6 +1,6 @@
 # Shared Alloy monitoring stack — deployed on every Docker host.
-# Per-host non-secret overrides (like HOSTNAME → INSTANCE_NAME) are set via
-# Komodo's `environment` field in each host's stack TOML definition.
+# Per-host non-secret overrides (like INSTANCE_NAME) are set via Komodo's
+# `environment` field in each host's stack TOML definition.
 services:
   alloy:
     image: grafana/alloy:v1.13.1
@@ -31,8 +31,8 @@ services:
     env_file:
       - .env
     environment:
-      # Docker reserves HOSTNAME, so map it to INSTANCE_NAME for Alloy
-      INSTANCE_NAME: ${HOSTNAME:-}
+      # Docker reserves HOSTNAME (shell + container runtime), so use INSTANCE_NAME everywhere
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
       PROMETHEUS_URL: ${PROMETHEUS_URL:-https://prometheus.sharmamohit.com/api/v1/write}
       LOKI_URL: ${LOKI_URL:-https://loki.sharmamohit.com/loki/api/v1/push}
     restart: unless-stopped
