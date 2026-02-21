@@ -12,6 +12,7 @@ services:
       - /sys:/host/sys:ro
       - /:/host/rootfs:ro
       - alloy-data:/var/lib/alloy/data
+      - traefik-logs:/var/log/traefik:ro
     configs:
       - source: alloy-config
         target: /etc/alloy/config.alloy
@@ -166,6 +167,34 @@ configs:
         }
 
         // ============================================================
+        // Traefik access logs via file (VPS only)
+        // ============================================================
+        // Access logs are written to a file, not stdout, so
+        // loki.source.docker doesn't capture them. This ships the
+        // JSON access log (with real client IPs) to Loki.
+
+        local.file_match "traefik_access" {
+          path_targets = [{"__path__" = "/var/log/traefik/access.log"}]
+        }
+
+        loki.source.file "traefik_access" {
+          targets    = local.file_match.traefik_access.targets
+          forward_to = [loki.process.traefik_access.receiver]
+        }
+
+        loki.process "traefik_access" {
+          stage.static_labels {
+            values = {
+              container = "/aegis-traefik",
+              job       = "traefik-access",
+              instance  = sys.env("INSTANCE_NAME"),
+            }
+          }
+
+          forward_to = [loki.write.loki.receiver]
+        }
+
+        // ============================================================
         // Loki write: push logs to K8s Loki
         // ============================================================
 
@@ -183,3 +212,6 @@ configs:
 
 volumes:
   alloy-data:
+  traefik-logs:
+    external: true
+    name: aegis-gateway_traefik-logs
