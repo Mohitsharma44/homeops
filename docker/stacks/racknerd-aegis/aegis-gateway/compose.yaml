@@ -56,6 +56,8 @@ services:
       - --accesslog=true
       - --accesslog.filepath=/var/log/traefik/access.log
       - --accesslog.format=json
+      - --accesslog.maxsize=50
+      - --accesslog.maxbackups=3
       - --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
       - --experimental.plugins.crowdsec-bouncer.version=v1.3.5
     ports:
