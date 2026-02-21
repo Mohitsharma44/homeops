@@ -41,7 +41,7 @@ Each level adds detail — start at L0 for orientation, drill down as needed.
 
 **How does the VPS connect?** Pangolin WireGuard tunnels — no ports exposed for management.
 Komodo reaches VPS Periphery through a private resource tunnel. VPS Alloy pushes
-metrics/logs to K8s through a separate tunnel. SSH (:2244) is the emergency backdoor.
+metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 
 ---
 
@@ -360,7 +360,7 @@ Pangolin crash on VPS
       → Komodo cannot redeploy Pangolin
         → STUCK
 
-Emergency backdoor: SSH on port 2244
+Emergency backdoor: SSH
   ssh hs "docker restart gerbil && docker restart pangolin-newt"
 ```
 
@@ -609,7 +609,6 @@ Emergency backdoor: SSH on port 2244
 | 9120 | TCP/HTTP | Komodo Core API |
 | 51820 | UDP | Gerbil WireGuard (primary) |
 | 21820 | UDP | Gerbil WireGuard (relay) |
-| 2244 | TCP | SSH to VPS (emergency backdoor) |
 | 8333 | TCP | SeaweedFS S3 API |
 
 ### Emergency procedures

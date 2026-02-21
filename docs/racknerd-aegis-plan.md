@@ -142,7 +142,7 @@ networks. A compromise of a public-facing app cannot pivot to Periphery or LLDAP
 
 ```bash
 ssh hs "mkdir -p /etc/sops/age"
-scp -P 2244 ~/.sops/key.txt root@23.94.73.98:/etc/sops/age/keys.txt
+scp -P <SSH_PORT> ~/.sops/key.txt root@23.94.73.98:/etc/sops/age/keys.txt
 ssh hs "chmod 600 /etc/sops/age/keys.txt && chown root:root /etc/sops/age/keys.txt"
 ```
 
@@ -881,7 +881,7 @@ cd /root/devel/aegis-gateway/pangolin/identity && docker compose up -d
 If the Pangolin tunnel is down and Komodo cannot reach Periphery:
 
 ```bash
-# SSH is the permanent emergency backdoor (port 2244)
+# SSH is the permanent emergency backdoor
 ssh hs "docker ps -a"                     # Inspect container state
 ssh hs "docker logs pangolin-newt"        # Check Newt tunnel
 ssh hs "docker restart gerbil"            # Restart WireGuard manager
@@ -889,7 +889,7 @@ ssh hs "docker restart pangolin-newt"     # Restart tunnel
 # If all else fails, manually docker compose up from /opt/aegis paths
 ```
 
-> SSH access on port 2244 must always remain functional. It is independent of all
+> SSH access must always remain functional. It is independent of all
 > Pangolin/Docker infrastructure.
 
 ---
@@ -981,7 +981,7 @@ concern. This means Alloy remains functional even if the Pangolin tunnel is down
 |------|-----------|
 | Docker socket access for Periphery | Architecturally required by Komodo. Mitigated by network isolation (newt-periphery only). |
 | `NET_ADMIN` + host networking for Machine Clients | Required for WireGuard tunnel creation. Pin images to specific versions. |
-| Pangolin self-loop circular dependency | If Pangolin crashes, Komodo can't reach Periphery to redeploy it. Mitigated by SSH emergency recovery (port 2244). |
+| Pangolin self-loop circular dependency | If Pangolin crashes, Komodo can't reach Periphery to redeploy it. Mitigated by SSH emergency recovery. |
 | PocketID bridges pangolin-internal and identity-internal | Required for OIDC + LDAP integration. Keep PocketID updated. |
 | Komodo Core + FerretDB host networking on LXC | Required so Core reads host resolv.conf for Pangolin DNS. FerretDB published on localhost only. Mitigated by future LXC→VM migration. |
 | Single age key across homelab + VPS | Simplifies operations. VPS compromise could decrypt all secrets. |
