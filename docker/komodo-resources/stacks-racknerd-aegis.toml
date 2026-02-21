@@ -79,7 +79,7 @@ description = "Grafana Alloy monitoring agent for racknerd-aegis VPS"
 tags = ["monitoring", "racknerd-aegis"]
 [stack.config]
 server_id = "racknerd-aegis"
-file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
+file_paths = ["docker/stacks/shared/alloy/compose.yaml", "docker/stacks/racknerd-aegis/alloy-override/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
