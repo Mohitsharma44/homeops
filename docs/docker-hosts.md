@@ -135,10 +135,13 @@ Primary application server and Docker build server for custom images.
 |---------|-----------|-------|
 | Traefik | `traefik` | Reverse proxy, `traefik_proxy` external network |
 | Vaultwarden | `vaultwarden` | `bitwarden.sharmamohit.com` |
+| Vaultwarden Backup | `vaultwarden-backup` | Daily SQLite backup sidecar (02:00 UTC) |
 | Periphery | `komodo-periphery-periphery-1` | Also serves as Komodo build server |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
 **Traefik network**: Services that need reverse proxying must join the `traefik_proxy` external Docker network and use Traefik labels for routing.
+
+**Vaultwarden backups**: An Alpine sidecar runs `sqlite3 .backup` daily at 02:00 UTC, storing copies locally at `/opt/backups/vaultwarden/` and uploading to SeaweedFS via WebDAV. Backups older than 180 days are pruned from both locations. See `docker/stacks/server04/vaultwarden/backup.sh` for the script.
 
 **Periphery quirk**: Requires explicit `dns: ["192.168.11.1"]` in the periphery compose — Docker's embedded DNS doesn't forward correctly on this host.
 

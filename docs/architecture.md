@@ -63,7 +63,9 @@ metrics/logs to K8s through a separate tunnel. SSH (:2244) is the emergency back
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐                      │
 │  │ traefik      │  │ vaultwarden  │  │ server04-alloy │                      │
 │  │ LAN reverse  │  │ Bitwarden    │  │ Alloy→K8s      │                      │
-│  │ proxy :80/443│  │              │  │                │                      │
+│  │ proxy :80/443│  │ + backup     │  │                │                      │
+│  │              │  │ sidecar→     │  │                │                      │
+│  │              │  │ SeaweedFS    │  │                │                      │
 │  └──────────────┘  └──────────────┘  └────────────────┘                      │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
@@ -120,7 +122,7 @@ metrics/logs to K8s through a separate tunnel. SSH (:2244) is the emergency back
 | Host | Stacks | Notes |
 |------|--------|-------|
 | komodo | komodo-core, komodo-alloy | + Machine Client for VPS mgmt |
-| server04 | traefik, vaultwarden, server04-alloy | LAN reverse proxy |
+| server04 | traefik, vaultwarden, server04-alloy | LAN reverse proxy, vaultwarden backup sidecar→SeaweedFS |
 | nvr | frigate, nvr-alloy | Coral TPU for object detection |
 | kasm | newt, kasm-alloy | KASM installer-managed separately |
 | omni | omni, omni-alloy | Talos Linux management |

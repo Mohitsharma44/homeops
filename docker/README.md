@@ -165,6 +165,38 @@ done
 # ssh root@komodo "systemctl restart periphery"
 ```
 
+## Backups
+
+### Komodo Core Database
+
+Backed up daily at 01:00 UTC via the `backup-core-database` Komodo procedure. Stored at `/etc/komodo/backups/` on the komodo host.
+
+### Vaultwarden
+
+A backup sidecar (`vaultwarden-backup`) runs alongside vaultwarden on server04. It uses `sqlite3 .backup` to create consistent snapshots of the live database daily at 02:00 UTC, which handles WAL checkpointing correctly even while vaultwarden is running.
+
+Backups go to two locations:
+- **Local**: `/opt/backups/vaultwarden/` on server04
+- **Remote**: SeaweedFS via WebDAV (`http://192.168.11.133:7333/mohitsharma44/backups/server04/vaultwarden/`)
+
+Backups older than 180 days are pruned from both locations.
+
+The sidecar is defined in the vaultwarden compose file and deploys with the stack — no separate Komodo stack definition needed. The backup logic lives in `docker/stacks/server04/vaultwarden/backup.sh`.
+
+```bash
+# Manual backup
+ssh mohitsharma44@server04 "docker exec vaultwarden-backup /usr/local/bin/backup.sh"
+
+# Check backup logs
+ssh mohitsharma44@server04 "docker logs vaultwarden-backup --tail 20"
+
+# Verify local backups
+ssh mohitsharma44@server04 "ls -lh /opt/backups/vaultwarden/"
+
+# Verify remote backups (from Mac with SeaweedFS mounted)
+ls /Volumes/seaweedfs.sharmamohit.com/mohitsharma44/backups/server04/vaultwarden/
+```
+
 ## Alloy Monitoring
 
 Every host runs a Grafana Alloy container that collects:
