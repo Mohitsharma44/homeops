@@ -1,7 +1,58 @@
-# VPS-specific Alloy config override — adds CrowdSec metrics scraping.
-# Merged with docker/stacks/shared/alloy/compose.yaml via Komodo file_paths.
-# Docker Compose merge replaces configs with the same name, so this
-# must contain the full shared config PLUS the CrowdSec scrape block.
+# VPS-specific Alloy stack — full copy of shared config with CrowdSec metrics scraping added.
+# Used instead of docker/stacks/shared/alloy/compose.yaml on racknerd-aegis only.
+# Komodo doesn't support Docker Compose file merge (multiple -f), so this must be
+# a complete standalone compose file. Keep service definition in sync with shared.
+services:
+  alloy:
+    image: grafana/alloy:v1.13.1
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/rootfs:ro
+      - alloy-data:/var/lib/alloy/data
+    configs:
+      - source: alloy-config
+        target: /etc/alloy/config.alloy
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - DAC_READ_SEARCH
+      - SYS_PTRACE
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=generally-available
+    env_file:
+      - ../../shared/alloy/.env
+    environment:
+      INSTANCE_NAME: ${INSTANCE_NAME:-}
+      PROMETHEUS_URL: ${PROMETHEUS_URL:-https://prometheus.sharmamohit.com/api/v1/write}
+      LOKI_URL: ${LOKI_URL:-https://loki.sharmamohit.com/loki/api/v1/push}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:12345/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 384M
+
 configs:
   alloy-config:
     content: |
@@ -129,3 +180,6 @@ configs:
             }
           }
         }
+
+volumes:
+  alloy-data:
