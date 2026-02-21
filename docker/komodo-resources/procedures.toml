@@ -50,7 +50,7 @@ executions = [
 [[procedure.config.stage]]
 name = "Applications"
 executions = [
-  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core|aegis-pangolin|aegis-newt|aegis-periphery" },
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core|aegis-pangolin|aegis-newt|aegis-periphery|aegis-pangolin-client" },
 ]
 
 [[procedure]]
@@ -80,6 +80,12 @@ executions = [
 name = "Management Agent"
 executions = [
   { execution.type = "DeployStack", execution.params.stack = "aegis-periphery" },
+]
+
+[[procedure.config.stage]]
+name = "Observability Tunnel"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-pangolin-client" },
 ]
 
 [[procedure.config.stage]]

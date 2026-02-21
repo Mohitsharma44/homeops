@@ -61,6 +61,19 @@ path = "docker/stacks/racknerd-aegis/newt"
 command = "sops-decrypt.sh"
 
 [[stack]]
+name = "aegis-pangolin-client"
+description = "Pangolin Machine Client — WireGuard routes to K8s private resources (Prometheus, Loki)"
+tags = ["networking", "racknerd-aegis"]
+[stack.config]
+server_id = "racknerd-aegis"
+file_paths = ["docker/stacks/racknerd-aegis/pangolin-client/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/pangolin-client"
+command = "sops-decrypt.sh"
+
+[[stack]]
 name = "racknerd-aegis-alloy"
 description = "Grafana Alloy monitoring agent for racknerd-aegis VPS"
 tags = ["monitoring", "racknerd-aegis"]
@@ -71,6 +84,8 @@ repo = "mohitsharma44/homeops"
 branch = "main"
 environment = """
 HOSTNAME=racknerd-aegis
+PROMETHEUS_URL=http://k8s-prometheus.private.sharmamohit.com:9090/api/v1/write
+LOKI_URL=http://k8s-loki.private.sharmamohit.com:3100/loki/api/v1/push
 """
 [stack.config.pre_deploy]
 path = "docker/stacks/shared/alloy"
