@@ -12,7 +12,8 @@ komodo-resources/          # TOML declarations (synced by Komodo)
 ├── procedures.toml        # Scheduled jobs (backup, rebuild, auto-update)
 └── stacks-{host}.toml     # Stack definitions per host
 stacks/                    # Compose files + encrypted secrets
-├── shared/alloy/          # Shared Alloy compose (all 6 hosts)
+├── shared/alloy/          # Shared Alloy compose (6 LAN hosts)
+├── racknerd-aegis/alloy-override/  # VPS-specific Alloy (adds CrowdSec scrape)
 └── {host}/{service}/      # Per-host compose + .sops.env
 periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 ```
@@ -70,6 +71,8 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 - **VPS tunnel-critical stacks**: `aegis-pangolin`, `aegis-newt`, `aegis-periphery` are excluded from batch deploy (same reason as komodo-core — redeploying severs the management tunnel). Use `km execute deploy-vps-infra` for ordered VPS deployment.
 - **VPS Pangolin connectivity**: Komodo reaches VPS Periphery via Pangolin private resource tunnel (`periphery.private.sharmamohit.com:8120`). A Machine Client on komodo (`/opt/pangolin-client/`) provides the WireGuard route. If the tunnel is down, use SSH (`ssh hs`) as the emergency backdoor.
 - **VPS network segmentation**: VPS uses multi-network isolation. Only containers needing WAN access touch `traefik-public` or `pangolin-internal`. Periphery is isolated on `newt-periphery` only (no ports published). LLDAP is on `identity-internal` only (PocketID bridges both networks).
+- **Komodo file_paths**: Only the first entry is used as the compose file. Komodo does NOT support Docker Compose file merge (multiple `-f` flags). To customize a shared stack for one host, create a standalone copy instead of an override.
+- **VPS Alloy override**: `racknerd-aegis-alloy` uses a standalone compose at `stacks/racknerd-aegis/alloy-override/compose.yaml` (not the shared one) to add CrowdSec metrics scraping. This is a full copy of the shared config — **keep it in sync** when the shared Alloy config changes. Its `env_file` points to `../../shared/alloy/.env` via relative path.
 
 ## Updating Komodo (Core + Periphery)
 
