@@ -1,0 +1,131 @@
+# VPS-specific Alloy config override — adds CrowdSec metrics scraping.
+# Merged with docker/stacks/shared/alloy/compose.yaml via Komodo file_paths.
+# Docker Compose merge replaces configs with the same name, so this
+# must contain the full shared config PLUS the CrowdSec scrape block.
+configs:
+  alloy-config:
+    content: |
+        // ============================================================
+        // Host metrics (node_exporter)
+        // ============================================================
+
+        prometheus.exporter.unix "host" {
+          procfs_path = "/host/proc"
+          sysfs_path  = "/host/sys"
+          rootfs_path = "/host/rootfs"
+        }
+
+        prometheus.scrape "host" {
+          targets         = prometheus.exporter.unix.host.targets
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "node"
+        }
+
+        // ============================================================
+        // Container metrics (cAdvisor)
+        // ============================================================
+
+        prometheus.exporter.cadvisor "containers" {
+          docker_host = "unix:///var/run/docker.sock"
+        }
+
+        prometheus.scrape "containers" {
+          targets         = prometheus.exporter.cadvisor.containers.targets
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "cadvisor"
+        }
+
+        // ============================================================
+        // CrowdSec metrics (VPS only)
+        // ============================================================
+
+        prometheus.scrape "crowdsec" {
+          targets         = [{"__address__" = "localhost:6060"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          metrics_path    = "/metrics"
+          job_name        = "crowdsec"
+        }
+
+        // ============================================================
+        // Relabel: add instance label from INSTANCE_NAME env var
+        // ============================================================
+
+        prometheus.relabel "instance" {
+          forward_to = [prometheus.remote_write.prometheus.receiver]
+
+          rule {
+            action       = "replace"
+            target_label = "instance"
+            replacement  = sys.env("INSTANCE_NAME")
+          }
+        }
+
+        // ============================================================
+        // Remote write: push metrics to K8s Prometheus
+        // ============================================================
+
+        prometheus.remote_write "prometheus" {
+          external_labels = {
+            source = "docker",
+          }
+
+          endpoint {
+            url = sys.env("PROMETHEUS_URL")
+
+            basic_auth {
+              username = sys.env("BASIC_AUTH_USERNAME")
+              password = sys.env("BASIC_AUTH_PASSWORD")
+            }
+          }
+        }
+
+        // ============================================================
+        // Container logs via Docker
+        // ============================================================
+
+        discovery.docker "containers" {
+          host = "unix:///var/run/docker.sock"
+        }
+
+        discovery.relabel "docker_logs" {
+          targets = discovery.docker.containers.targets
+
+          rule {
+            source_labels = ["__meta_docker_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_docker_image_name"]
+            target_label  = "image"
+          }
+          rule {
+            action       = "replace"
+            target_label = "instance"
+            replacement  = sys.env("INSTANCE_NAME")
+          }
+        }
+
+        loki.source.docker "containers" {
+          host       = "unix:///var/run/docker.sock"
+          targets    = discovery.relabel.docker_logs.output
+          forward_to = [loki.write.loki.receiver]
+        }
+
+        // ============================================================
+        // Loki write: push logs to K8s Loki
+        // ============================================================
+
+        loki.write "loki" {
+          endpoint {
+            url       = sys.env("LOKI_URL")
+            tenant_id = "homelab"
+
+            basic_auth {
+              username = sys.env("BASIC_AUTH_USERNAME")
+              password = sys.env("BASIC_AUTH_PASSWORD")
+            }
+          }
+        }

@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     networks:
       - traefik-public
+    ports:
+      - "127.0.0.1:6060:6060" # Prometheus metrics — loopback only, NOT exposed to WAN
     environment:
       TZ: America/New_York
       COLLECTIONS: "crowdsecurity/traefik crowdsecurity/http-cve crowdsecurity/base-http-scenarios"
