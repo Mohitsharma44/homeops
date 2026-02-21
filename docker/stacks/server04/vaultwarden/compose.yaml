@@ -12,13 +12,9 @@ services:
     env_file: .env
     environment:
       - DOMAIN=https://bitwarden.sharmamohit.com
-      - SMTP_FROM=${GMAIL_USERNAME}
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=465
-      - SMTP_SSL=false
-      - SMTP_EXPLICIT_TLS=true
-      - SMTP_USERNAME=${GMAIL_USERNAME}
-      - SMTP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - SMTP_SECURITY=force_tls
     volumes:
       - ./vw-data:/data
     labels:
