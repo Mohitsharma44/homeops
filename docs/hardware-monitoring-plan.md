@@ -601,17 +601,17 @@ Same approach as pve: smartctl_exporter + Alloy both as systemd services on the 
 
 **Listen address**: `127.0.0.1:9633` — local scrape only.
 
-Install Alloy via Grafana APT repo (truenas is Debian 12). Same commands as pve.
+**Alloy installation**: TrueNAS blocks APT package management ("Package management tools are disabled on TrueNAS appliances"), so Alloy is installed as a standalone binary downloaded from GitHub releases. Installed at `/root/alloy/alloy` (v1.6.1). A custom systemd unit at `/etc/systemd/system/alloy.service` runs it.
 
-**Config**: Same River config structure as pve, but with `instance = "truenas"` and the additional ZFS pool health monitoring (see Phase 5).
+**Config**: Same River config structure as pve, but with `instance = "truenas"`. Config at `/etc/alloy/config.alloy`, env at `/etc/default/alloy` (mode 0600).
 
 **TrueNAS filesystem constraints** (discovered during install):
 - `/opt/` is **read-only** (root FS is immutable ZFS boot pool)
 - `/mnt/` is mounted with **`noexec`** — binaries cannot execute from ZFS data pools
-- `/root/` is writable and executable — binary installed at `/root/smartctl-exporter/smartctl_exporter`
+- `/root/` is writable and executable — both smartctl_exporter and Alloy binaries live under `/root/`
 - `/etc/systemd/system/` is writable — custom systemd services work
-- `ProtectHome=true` must be **disabled** in the systemd service since the binary lives under `/root/`
-- TrueNAS OS upgrades may reset `/etc/systemd/system/` and `/root/`. The `SmartExporterDown` alert will fire if this happens. Reinstall after major upgrades.
+- `ProtectHome=false` in both systemd services since binaries live under `/root/`
+- TrueNAS OS upgrades may reset `/etc/systemd/system/` and `/root/`. The `SmartExporterDown` alert will fire if this happens. Reinstall from documented steps.
 
 ### Listen Address Summary
 
@@ -620,7 +620,7 @@ All smartctl_exporter instances bind to `127.0.0.1:9633` — Alloy always runs o
 | Host | smartctl_exporter | Binary path | Alloy | Notes |
 |------|------------------|-------------|-------|-------|
 | pve | `127.0.0.1:9633` (systemd, v0.13.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 2 SSDs, auto-scan. Host metrics + SMART + journal |
-| truenas | `127.0.0.1:9633` (systemd, v0.13.0) | `/root/smartctl-exporter/` | Systemd (APT package) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal + ZFS (Phase 5) |
+| truenas | `127.0.0.1:9633` (systemd, v0.13.0) | `/root/smartctl-exporter/` | Systemd (manual binary, v1.6.1 at `/root/alloy/`) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal |
 | server04 | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 5 drives (4 SAS via `";cciss,0"` + 1 SSD). Host metrics + SMART + cAdvisor + Docker logs + journal. Replaces `server04-alloy` Komodo stack |
 
 ---
@@ -646,8 +646,8 @@ Deploy AFTER Phase 2 exporters are confirmed working.
 | SmartDiskUnhealthy | `smartctl_device_smart_status != 1` | 5m | critical | Most important alert (metric name is `smartctl_device_smart_status` in v0.13+) |
 | SmartReallocatedSectorsGrowing | `increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw"}[24h]) > 0` | 5m | warning | Uses `increase()` to avoid false alarms from pre-existing sectors |
 | SmartPendingSectorsGrowing | `increase(smartctl_device_attribute{attribute_name="Current_Pending_Sector",attribute_value_type="raw"}[24h]) > 0` | 5m | warning | Uses `increase()` — same rationale |
-| SmartDiskTemperatureHigh | `smartctl_device_temperature > 55` | 10m | warning | |
-| SmartDiskTemperatureCritical | `smartctl_device_temperature > 65` | 5m | critical | |
+| SmartDiskTemperatureHigh | `smartctl_device_temperature{temperature_type="current"} > 55` | 10m | warning | Must filter `temperature_type="current"` — `drive_trip` values are manufacturer shutdown thresholds, not actual temps |
+| SmartDiskTemperatureCritical | `smartctl_device_temperature{temperature_type="current"} > 65` | 5m | critical | Same filter required |
 | SmartNvmeMediaErrors | `increase(smartctl_device_media_errors[24h]) > 0` | 5m | warning | `increase()` for same reason |
 | SmartNvmeCriticalWarning | `smartctl_device_critical_warning > 0` | 5m | critical | |
 | SmartExporterDown | `up{job="smartctl"} == 0` | 5m | warning | A crashed exporter may itself indicate disk problems |
@@ -683,14 +683,14 @@ With Alloy running directly on truenas (Phase 2C), we have direct access to the 
 Phase 1 ─── Alertmanager receivers + HA webhook + node health rules  ✅ DONE
              (foundation — works with existing metrics)
                  |
-Phase 2 ──── smartctl_exporter (systemd) + Alloy (systemd) on all 3 hosts  🔄 IN PROGRESS
+Phase 2 ──── smartctl_exporter (systemd) + Alloy (systemd) on all 3 hosts  ✅ DONE
              server04: also remove existing Docker Alloy (server04-alloy stack)
                  |
 Phase 3 ──── DROPPED (server04 iLO dead, not worth single-target IPMI exporter)
                  |
-Phase 4 ───── SMART PrometheusRules (after metrics confirmed)
+Phase 4 ───── SMART PrometheusRules (after metrics confirmed)  ✅ DONE
                  |
-Phase 5 ───── ZFS pool health via truenas Alloy (stretch goal)
+Phase 5 ───── ZFS pool health via truenas Alloy  ✅ DONE
 ```
 
 ## Files Summary

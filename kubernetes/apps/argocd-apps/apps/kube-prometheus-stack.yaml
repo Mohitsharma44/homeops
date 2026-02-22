@@ -239,6 +239,93 @@ spec:
                       severity: warning
                     annotations:
                       summary: "CPU usage on {{ $labels.instance }} is {{ $value | humanizePercentage }}"
+          infra-smart-health:
+            groups:
+              - name: infra-smart-health
+                rules:
+                  - alert: SmartDiskUnhealthy
+                    expr: smartctl_device_smart_status{source="docker"} != 1
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "SMART health check FAILED on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartReallocatedSectorsGrowing
+                    expr: |
+                      increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw",source="docker"}[24h]) > 0
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Reallocated sectors increasing on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartPendingSectorsGrowing
+                    expr: |
+                      increase(smartctl_device_attribute{attribute_name="Current_Pending_Sector",attribute_value_type="raw",source="docker"}[24h]) > 0
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Pending sectors increasing on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartDiskTemperatureHigh
+                    expr: smartctl_device_temperature{temperature_type="current",source="docker"} > 55
+                    for: 10m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Disk temperature {{ $value }}C on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartDiskTemperatureCritical
+                    expr: smartctl_device_temperature{temperature_type="current",source="docker"} > 65
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "Disk temperature critical {{ $value }}C on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartNvmeMediaErrors
+                    expr: increase(smartctl_device_media_errors{source="docker"}[24h]) > 0
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "NVMe media errors increasing on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartNvmeCriticalWarning
+                    expr: smartctl_device_critical_warning{source="docker"} > 0
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "NVMe critical warning on {{ $labels.device }} ({{ $labels.instance }})"
+                  - alert: SmartExporterDown
+                    expr: up{job="smartctl", source="docker"} == 0
+                    for: 5m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "smartctl_exporter down on {{ $labels.instance }}"
+          infra-zfs-health:
+            groups:
+              - name: infra-zfs-health
+                rules:
+                  - alert: ZfsPoolDegraded
+                    expr: node_zfs_zpool_state{state="degraded", source="docker"} == 1
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "ZFS pool {{ $labels.zpool }} is DEGRADED on {{ $labels.instance }}"
+                  - alert: ZfsPoolFaulted
+                    expr: node_zfs_zpool_state{state="faulted", source="docker"} == 1
+                    for: 1m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "ZFS pool {{ $labels.zpool }} is FAULTED on {{ $labels.instance }}"
+                  - alert: ZfsPoolUnavail
+                    expr: node_zfs_zpool_state{state="unavail", source="docker"} == 1
+                    for: 1m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "ZFS pool {{ $labels.zpool }} is UNAVAILABLE on {{ $labels.instance }}"
           infra-watchdog:
             groups:
               - name: infra-watchdog
