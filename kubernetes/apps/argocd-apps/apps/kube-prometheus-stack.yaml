@@ -103,7 +103,49 @@ spec:
             limits:
               memory: 512Mi
         alertmanager:
+          config:
+            global:
+              resolve_timeout: 5m
+            route:
+              receiver: homeassistant
+              group_by: ['alertname', 'instance']
+              group_wait: 3m
+              group_interval: 10m
+              repeat_interval: 6h
+              routes:
+                - receiver: "null"
+                  matchers:
+                    - alertname = "Watchdog"
+                - receiver: homeassistant
+                  matchers:
+                    - severity = "critical"
+                  repeat_interval: 1h
+                  continue: true
+                - receiver: homeassistant
+                  matchers:
+                    - severity = "warning"
+                  repeat_interval: 6h
+                  continue: true
+                - receiver: slack
+                  matchers:
+                    - severity =~ "critical|warning"
+                  repeat_interval: 6h
+            receivers:
+              - name: homeassistant
+                webhook_configs:
+                  - url: 'https://homeassistant.sharmamohit.com:8123/api/webhook/alertmanager-infra-alerts'
+                    send_resolved: true
+              - name: slack
+                slack_configs:
+                  - api_url_file: '/etc/alertmanager/secrets/alertmanager-slack-webhook/slack-webhook-url'
+                    channel: '#homelab-alerts'
+                    send_resolved: true
+                    title: '{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }} {{ .CommonLabels.alertname }}'
+                    text: '{{ range .Alerts }}*{{ .Labels.severity | toUpper }}* - {{ .Labels.instance }}\n{{ .Annotations.summary }}\n{{ end }}'
+              - name: "null"
           alertmanagerSpec:
+            secrets:
+              - alertmanager-slack-webhook
             retention: 120h
             storage:
               volumeClaimTemplate:
@@ -138,6 +180,75 @@ spec:
               memory: 128Mi
             limits:
               memory: 256Mi
+        additionalPrometheusRulesMap:
+          infra-node-health:
+            groups:
+              - name: infra-node-health
+                rules:
+                  - alert: InfraHostDown
+                    expr: up{job="integrations/unix", source="docker"} == 0
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "Host {{ $labels.instance }} is unreachable"
+                  - alert: FilesystemSpaceLow
+                    expr: |
+                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}
+                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="docker"}) > 0.85
+                    for: 15m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full"
+                  - alert: FilesystemSpaceCritical
+                    expr: |
+                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}
+                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="docker"}) > 0.95
+                    for: 5m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is critically full ({{ $value | humanizePercentage }})"
+                  - alert: FilesystemWillFillIn24h
+                    expr: |
+                      predict_linear(
+                        node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}[6h],
+                        24*3600
+                      ) < 0
+                    for: 1h
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} will fill within 24 hours"
+                  - alert: HighMemoryUsage
+                    expr: |
+                      (1 - node_memory_MemAvailable_bytes{source="docker"}
+                      / node_memory_MemTotal_bytes{source="docker"}) > 0.90
+                    for: 15m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "Memory usage on {{ $labels.instance }} is {{ $value | humanizePercentage }}"
+                  - alert: HighCpuLoad
+                    expr: |
+                      (1 - avg by (instance)
+                      (rate(node_cpu_seconds_total{mode="idle",source="docker"}[10m]))) > 0.90
+                    for: 30m
+                    labels:
+                      severity: warning
+                    annotations:
+                      summary: "CPU usage on {{ $labels.instance }} is {{ $value | humanizePercentage }}"
+          infra-watchdog:
+            groups:
+              - name: infra-watchdog
+                rules:
+                  - alert: Watchdog
+                    expr: vector(1)
+                    labels:
+                      severity: none
+                    annotations:
+                      summary: "Alertmanager is alive"
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
