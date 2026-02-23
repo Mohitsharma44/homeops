@@ -165,7 +165,7 @@ In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all 6 Docker hosts
 - **Container metrics**: per-container resource usage via embedded cAdvisor
 - **Container logs**: stdout/stderr from all Docker containers
 
-Data is pushed to the K8s observability stack via the external write endpoints below. All Docker metrics include `source="docker"` and `instance=<hostname>` labels for filtering in Grafana.
+Data is pushed to the K8s observability stack via the external write endpoints below. All infrastructure host metrics include `source="infra"` and `instance=<hostname>` labels for filtering in Grafana.
 
 Alloy compose and config: `docker/stacks/shared/alloy/compose.yaml`
 Per-host credentials: `docker/stacks/shared/alloy/.sops.env` (SOPS-encrypted)
