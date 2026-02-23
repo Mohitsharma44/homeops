@@ -26,19 +26,3 @@ VAULTWARDEN_URL=bitwarden.sharmamohit.com
 [stack.config.pre_deploy]
 path = "docker/stacks/server04/vaultwarden"
 command = "sops-decrypt.sh"
-
-[[stack]]
-name = "server04-alloy"
-description = "Grafana Alloy monitoring agent for server04 host"
-tags = ["monitoring", "server04"]
-[stack.config]
-server_id = "server04"
-file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
-repo = "mohitsharma44/homeops"
-branch = "main"
-environment = """
-INSTANCE_NAME=server04
-"""
-[stack.config.pre_deploy]
-path = "docker/stacks/shared/alloy"
-command = "sops-decrypt.sh"

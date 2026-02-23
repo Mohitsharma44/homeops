@@ -37,7 +37,7 @@ Each level adds detail — start at L0 for orientation, drill down as needed.
 
 **What is this?** A GitOps-managed homelab. Two platforms:
 - **Kubernetes** — Flux bootstraps infra, ArgoCD deploys apps. 3-node Talos cluster.
-- **Docker** — Komodo orchestrates 19 stacks across 7 hosts (6 LAN + 1 VPS).
+- **Docker** — Komodo orchestrates stacks across 7 hosts (6 LAN + 1 VPS).
 
 **How does the VPS connect?** Pangolin WireGuard tunnels — no ports exposed for management.
 Komodo reaches VPS Periphery through a private resource tunnel. VPS Alloy pushes
@@ -61,10 +61,10 @@ metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 ┌─ server04 (192.168.11.17) ─ Bare metal ───────────────────────────────────────┐
 │  Periphery: Docker (periphery-sops)                                           │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐                      │
-│  │ traefik      │  │ vaultwarden  │  │ server04-alloy │                      │
-│  │ LAN reverse  │  │ Bitwarden    │  │ Alloy→K8s      │                      │
-│  │ proxy :80/443│  │ + backup     │  │                │                      │
-│  │              │  │ sidecar→     │  │                │                      │
+│  │ traefik      │  │ vaultwarden  │  │ Alloy (systemd)│                      │
+│  │ LAN reverse  │  │ Bitwarden    │  │ host metrics + │                      │
+│  │ proxy :80/443│  │ + backup     │  │ SMART + Docker │                      │
+│  │              │  │ sidecar→     │  │ + journal→K8s  │                      │
 │  │              │  │ SeaweedFS    │  │                │                      │
 │  └──────────────┘  └──────────────┘  └────────────────┘                      │
 ├───────────────────────────────────────────────────────────────────────────────┤
@@ -117,20 +117,21 @@ metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Stack inventory (19 total)
+### Stack inventory (19 Komodo-managed)
 
 | Host | Stacks | Notes |
 |------|--------|-------|
 | komodo | komodo-core, komodo-alloy | + Machine Client for VPS mgmt |
-| server04 | traefik, vaultwarden, server04-alloy | LAN reverse proxy, vaultwarden backup sidecar→SeaweedFS |
+| server04 | traefik, vaultwarden | LAN reverse proxy, vaultwarden backup sidecar→SeaweedFS. Alloy runs as systemd service (not Komodo) |
 | nvr | frigate, nvr-alloy | Coral TPU for object detection |
 | kasm | newt, kasm-alloy | KASM installer-managed separately |
 | omni | omni, omni-alloy | Talos Linux management |
 | seaweedfs | seaweedfs, seaweedfs-alloy | S3 for Loki/Tempo/Thanos |
 | racknerd-aegis | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy | VPS — 7 stacks |
 
-All hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`).
+Most hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`) via Komodo.
 Per-host config via Komodo `environment` field → `INSTANCE_NAME`, `PROMETHEUS_URL`, `LOKI_URL`.
+Exceptions: server04, pve, and truenas run systemd Alloy with extended configs (SMART, journal, IPMI).
 
 ---
 

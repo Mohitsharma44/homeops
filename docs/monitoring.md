@@ -157,18 +157,18 @@ Grafana
 | Tempo OTLP HTTP | http://tempo.monitoring.svc:4318 |
 | Alertmanager | http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 |
 
-## Docker Host Monitoring (Alloy via Komodo)
+## Infrastructure Host Monitoring (Alloy)
 
-In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all 6 Docker hosts (managed by [Komodo](/docker/README.md)). Each host collects:
+In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all infrastructure hosts outside K8s. Each host collects:
 
 - **Host metrics**: CPU, memory, disk, network via embedded node_exporter
-- **Container metrics**: per-container resource usage via embedded cAdvisor
-- **Container logs**: stdout/stderr from all Docker containers
+- **Container metrics**: per-container resource usage via embedded cAdvisor (Docker hosts only)
+- **Container logs**: stdout/stderr from all Docker containers (Docker hosts only)
 
 Data is pushed to the K8s observability stack via the external write endpoints below. All infrastructure host metrics include `source="infra"` and `instance=<hostname>` labels for filtering in Grafana.
 
-Alloy compose and config: `docker/stacks/shared/alloy/compose.yaml`
-Per-host credentials: `docker/stacks/shared/alloy/.sops.env` (SOPS-encrypted)
+**Komodo-managed Alloy** (5 LAN hosts + VPS): `docker/stacks/shared/alloy/compose.yaml`, credentials in `docker/stacks/shared/alloy/.sops.env`
+**Systemd Alloy** (server04, pve, truenas): `/etc/alloy/config.alloy`, credentials in `/etc/alloy/env`. These hosts also run smartctl_exporter and ship journal logs.
 
 ## External Write Endpoints
 
