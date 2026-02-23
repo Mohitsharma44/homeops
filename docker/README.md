@@ -35,7 +35,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | **nvr** | 192.168.11.89 | `root@nvr` | Video recording | frigate, nvr-alloy |
 | **kasm** | 192.168.11.34 | `root@kasm` | Remote desktop (KASM) | newt, kasm-alloy |
 | **omni** | 192.168.11.30 | `root@omni` | Talos K8s management | omni, omni-alloy |
-| **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden, server04-alloy |
+| **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden |
 | **seaweedfs** | 192.168.11.133 | `mohitsharma44@seaweedfs` | Object storage | seaweedfs, seaweedfs-alloy |
 
 **Notes:**
@@ -199,7 +199,7 @@ ls /Volumes/seaweedfs.sharmamohit.com/mohitsharma44/backups/server04/vaultwarden
 
 ## Alloy Monitoring
 
-Every host runs a Grafana Alloy container that collects:
+Most hosts run a Grafana Alloy container (via Komodo) that collects:
 - **Host metrics** — CPU, memory, disk, network (via node_exporter)
 - **Container metrics** — per-container resource usage (via cAdvisor)
 - **Container logs** — stdout/stderr from all Docker containers
@@ -208,7 +208,9 @@ Data is pushed to the K8s observability stack:
 - Metrics → `https://prometheus.sharmamohit.com/api/v1/write`
 - Logs → `https://loki.sharmamohit.com/loki/api/v1/push`
 
-All alloy stacks share `docker/stacks/shared/alloy/compose.yaml` with per-host `HOSTNAME` set via Komodo's `environment` field in each stack TOML. Credentials (Prometheus/Loki URLs and basic auth) are in the shared `.sops.env`.
+Komodo-managed alloy stacks share `docker/stacks/shared/alloy/compose.yaml` with per-host `INSTANCE_NAME` set via Komodo's `environment` field in each stack TOML. Credentials (Prometheus/Loki URLs and basic auth) are in the shared `.sops.env`.
+
+**Exception**: server04 runs a systemd Alloy service (not a Komodo stack) with an extended config that includes SMART disk monitoring, journal log shipping, and cAdvisor. Config at `/etc/alloy/config.alloy`. See `docs/hardware-monitoring-plan.md` for details.
 
 ## TOML Stack Definition Pattern
 
@@ -256,9 +258,10 @@ km execute deploy-stack <stack-name>
 ### Deploy All Alloy Stacks
 
 ```bash
-for stack in kasm-alloy komodo-alloy nvr-alloy omni-alloy seaweedfs-alloy server04-alloy; do
+for stack in kasm-alloy komodo-alloy nvr-alloy omni-alloy seaweedfs-alloy racknerd-aegis-alloy; do
   km execute deploy-stack "$stack" --yes
 done
+# Note: server04 uses systemd Alloy (not a Komodo stack) — restart via: ssh mohitsharma44@server04 "sudo systemctl restart alloy"
 ```
 
 ### Check Stack Status

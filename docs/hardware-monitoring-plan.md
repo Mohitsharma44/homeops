@@ -71,8 +71,8 @@ pve (192.168.11.13)          truenas (192.168.11.15)       server04 (192.168.11.
 
 Note: komodo Alloy (LXC) and seaweedfs Alloy (VM) continue running the shared
 Docker compose config unchanged — they monitor their own guest-level metrics.
-server04's existing Komodo-managed Docker Alloy (server04-alloy stack) is
-REPLACED by the systemd Alloy and should be removed from stacks-server04.toml.
+server04's Komodo-managed Docker Alloy (server04-alloy stack) has been
+REPLACED by the systemd Alloy and removed from stacks-server04.toml.
 ```
 
 ---
@@ -289,7 +289,7 @@ All 5 drives are explicitly listed. When `--smartctl.device` flags are used, aut
 
 The `alloy` user must be added to the `docker` group for Docker socket access: `usermod -aG docker alloy`
 
-**Migration**: The existing `server04-alloy` Komodo stack (shared Docker Alloy) must be undeployed and removed from `docker/komodo-resources/stacks-server04.toml` after the systemd Alloy is confirmed working.
+**Migration**: The `server04-alloy` Komodo stack has been undeployed and removed from `docker/komodo-resources/stacks-server04.toml`. Systemd Alloy handles all monitoring on server04.
 
 **Config**: `/etc/alloy/config.alloy` — extends the pve/truenas config with Docker + IPMI blocks:
 
@@ -705,7 +705,7 @@ Phase 5 ───── ZFS pool health via truenas Alloy  ✅ DONE
 |------|---------|
 | `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` | Alertmanager config (api_url_file + secrets mount) + PrometheusRules |
 | `kubernetes/infrastructure/configs/kustomization.yaml` | Add alertmanager-slack-secret.yaml |
-| `docker/komodo-resources/stacks-server04.toml` | **Remove** `server04-alloy` stack (replaced by systemd) |
+| `docker/komodo-resources/stacks-server04.toml` | `server04-alloy` stack removed (replaced by systemd) |
 
 ### Manual steps (not GitOps)
 | Step | Host | Action |
@@ -719,11 +719,11 @@ Phase 5 ───── ZFS pool health via truenas Alloy  ✅ DONE
 | 7 | server04 | Install smartctl_exporter v0.13.0 binary + systemd service (listen: 127.0.0.1:9633, with cciss,N + /dev/sde flags) |
 | 8 | server04 | Install Alloy via Grafana APT repo + River config + env file with credentials |
 | 9 | server04 | Add alloy user to groups: `usermod -aG systemd-journal,docker alloy` |
-| 10 | server04 | Undeploy `server04-alloy` Komodo stack after systemd Alloy is confirmed working |
+| 10 | server04 | Undeploy `server04-alloy` Komodo stack — done, removed from stacks-server04.toml |
 | 11 | Slack | Create incoming webhook app, copy webhook URL for Alertmanager config |
 | 12 | HA | Create webhook automation for Alertmanager notifications |
 
-**Note**: komodo and seaweedfs Alloy stacks continue using the shared compose config unchanged — no overrides needed for those hosts. The `server04-alloy` stack is the only Komodo-managed Alloy that gets replaced.
+**Note**: komodo and seaweedfs Alloy stacks continue using the shared compose config unchanged — no overrides needed for those hosts.
 
 ### Credential Rotation Procedure
 

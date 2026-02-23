@@ -26,9 +26,11 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | nvr | 192.168.11.89 | root@nvr | frigate, nvr-alloy |
 | kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
-| server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden, server04-alloy |
+| server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden |
 | seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
-| racknerd-aegis | 23.94.73.98 | root@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, racknerd-aegis-alloy |
+| racknerd-aegis | 23.94.73.98 | root@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
+
+**Note**: server04 monitoring uses a systemd Alloy service (not a Komodo-managed Docker stack). See `docs/hardware-monitoring-plan.md` for details.
 
 ## Komodo Access
 - **UI**: https://komodo.sharmamohit.com

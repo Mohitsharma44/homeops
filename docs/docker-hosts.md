@@ -137,7 +137,8 @@ Primary application server and Docker build server for custom images.
 | Vaultwarden | `vaultwarden` | `bitwarden.sharmamohit.com` |
 | Vaultwarden Backup | `vaultwarden-backup` | Daily SQLite backup sidecar (02:00 UTC) |
 | Periphery | `komodo-periphery-periphery-1` | Also serves as Komodo build server |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Alloy | systemd service | Host metrics + SMART + cAdvisor + Docker logs + journal. Config at `/etc/alloy/config.alloy` |
+| smartctl_exporter | systemd service | SMART disk health on `127.0.0.1:9633` (5 drives: 4 SAS via cciss + 1 SSD) |
 
 **Traefik network**: Services that need reverse proxying must join the `traefik_proxy` external Docker network and use Traefik labels for routing.
 
