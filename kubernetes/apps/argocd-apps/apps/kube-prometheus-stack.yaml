@@ -102,12 +102,762 @@ spec:
               memory: 256Mi
             limits:
               memory: 512Mi
+          grafana.ini:
+            server:
+              root_url: https://grafana.sharmamohit.com
+            unified_alerting:
+              enabled: true
+            alerting:
+              enabled: false
+          envValueFrom:
+            GF_SLACK_WEBHOOK_URL:
+              secretKeyRef:
+                name: alertmanager-slack-webhook
+                key: slack-webhook-url
+          # Grafana Alerting provisioning — sends Slack notifications via Grafana.
+          # IMPORTANT: Thresholds here must match additionalPrometheusRulesMap below.
+          # Grafana rules feed Slack (via contact point below).
+          # Changing a threshold in one place without the other causes drift.
+          alerting:
+            templates.yaml:
+              apiVersion: 1
+              templates:
+                - orgId: 1
+                  name: homelab-slack
+                  template: |
+                    {{ "{{" }} define "slack.homelab.title" -{{ "}}" }}
+                    {{ "{{" }} if eq .Status "firing" {{ "}}" }}:fire:{{ "{{" }} else {{ "}}" }}:white_check_mark:{{ "{{" }} end {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }}
+                    {{ "{{" }}- end {{ "}}" }}
+
+                    {{ "{{" }} define "slack.homelab.text" -{{ "}}" }}
+                    {{ "{{" }} range .Alerts -{{ "}}" }}
+                    *{{ "{{" }} .Labels.severity | toUpper {{ "}}" }}* — {{ "{{" }} .Labels.instance {{ "}}" }}
+                    {{ "{{" }} .Annotations.summary {{ "}}" }}
+                    :chart_with_upwards_trend: <https://grafana.sharmamohit.com/alerting/list|View Alerts>  {{ "{{" }} if .SilenceURL {{ "}}" }}:no_bell: <{{ "{{" }} .SilenceURL {{ "}}" }}|Silence>{{ "{{" }} end {{ "}}" }}
+                    {{ "{{" }} end -{{ "}}" }}
+                    {{ "{{" }}- end {{ "}}" }}
+            contactpoints.yaml:
+              apiVersion: 1
+              contactPoints:
+                - orgId: 1
+                  name: slack-homelab
+                  receivers:
+                    - uid: slack-homelab-receiver
+                      type: slack
+                      disableResolveMessage: false
+                      settings:
+                        url: $GF_SLACK_WEBHOOK_URL
+                        title: '{{ "{{" }} template "slack.homelab.title" . {{ "}}" }}'
+                        text: '{{ "{{" }} template "slack.homelab.text" . {{ "}}" }}'
+            policies.yaml:
+              apiVersion: 1
+              policies:
+                - orgId: 1
+                  receiver: slack-homelab
+                  group_by:
+                    - grafana_folder
+                    - alertname
+                  group_wait: 3m
+                  group_interval: 10m
+                  repeat_interval: 6h
+                  routes:
+                    - receiver: slack-homelab
+                      object_matchers:
+                        - ["severity", "=", "none"]
+                      group_wait: 8760h
+                      repeat_interval: 8760h
+                      continue: false
+                    - receiver: slack-homelab
+                      group_by:
+                        - alertname
+                        - instance
+                      object_matchers:
+                        - ["severity", "=~", "critical|warning"]
+                      group_wait: 3m
+                      group_interval: 10m
+                      repeat_interval: 6h
+                      routes:
+                        - receiver: slack-homelab
+                          object_matchers:
+                            - ["severity", "=", "critical"]
+                          repeat_interval: 1h
+            rules.yaml:
+              apiVersion: 1
+              groups:
+                - orgId: 1
+                  name: infra-node-health
+                  folder: Infra Node Health
+                  interval: 60s
+                  rules:
+                    - uid: infra-host-down
+                      title: InfraHostDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="integrations/unix",source="infra"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Host {{ "{{" }} $labels.instance {{ "}}" }} is unreachable'
+                    - uid: fs-space-low
+                      title: FilesystemSpaceLow
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: '(1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="infra"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.85]
+                            refId: C
+                      for: 15m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Filesystem {{ "{{" }} $labels.mountpoint {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} is over 85% full'
+                    - uid: fs-space-critical
+                      title: FilesystemSpaceCritical
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: '(1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="infra"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.95]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Filesystem {{ "{{" }} $labels.mountpoint {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} is critically full (over 95%)'
+                    - uid: fs-fill-24h
+                      title: FilesystemWillFillIn24h
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 21600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"}[6h], 24*3600)'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [0]
+                            refId: C
+                      for: 1h
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Filesystem {{ "{{" }} $labels.mountpoint {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} will fill within 24 hours'
+                    - uid: high-memory
+                      title: HighMemoryUsage
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: '(1 - node_memory_MemAvailable_bytes{instance!="truenas",source="infra"} / node_memory_MemTotal_bytes{instance!="truenas",source="infra"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.90]
+                            refId: C
+                      for: 15m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Memory usage on {{ "{{" }} $labels.instance {{ "}}" }} is over 90%'
+                    - uid: high-cpu
+                      title: HighCpuLoad
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: '(1 - avg by(instance)(rate(node_cpu_seconds_total{mode="idle",source="infra"}[10m])))'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.90]
+                            refId: C
+                      for: 30m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'CPU usage on {{ "{{" }} $labels.instance {{ "}}" }} is over 90%'
+                - orgId: 1
+                  name: infra-smart-health
+                  folder: Infra SMART Health
+                  interval: 60s
+                  rules:
+                    - uid: smart-unhealthy
+                      title: SmartDiskUnhealthy
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'smartctl_device_smart_status'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'SMART health check FAILED on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-realloc
+                      title: SmartReallocatedSectorsGrowing
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 86400
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw"}[24h])'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Reallocated sectors increasing on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-pending
+                      title: SmartPendingSectorsGrowing
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 86400
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'increase(smartctl_device_attribute{attribute_name="Current_Pending_Sector",attribute_value_type="raw"}[24h])'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Pending sectors increasing on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-temp-high
+                      title: SmartDiskTemperatureHigh
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'smartctl_device_temperature{temperature_type="current"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [60]
+                            refId: C
+                      for: 10m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Disk temperature high on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-temp-crit
+                      title: SmartDiskTemperatureCritical
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'smartctl_device_temperature{temperature_type="current"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [65]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Disk temperature critical on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-nvme-media
+                      title: SmartNvmeMediaErrors
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 86400
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'increase(smartctl_device_media_errors[24h])'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'NVMe media errors increasing on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-nvme-crit
+                      title: SmartNvmeCriticalWarning
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'smartctl_device_critical_warning'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'NVMe critical warning on {{ "{{" }} $labels.device {{ "}}" }} ({{ "{{" }} $labels.instance {{ "}}" }})'
+                    - uid: smart-exporter-down
+                      title: SmartExporterDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="smartctl"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'smartctl_exporter down on {{ "{{" }} $labels.instance {{ "}}" }}'
+                - orgId: 1
+                  name: infra-zfs-health
+                  folder: Infra ZFS Health
+                  interval: 30s
+                  rules:
+                    - uid: zfs-degraded
+                      title: ZfsPoolDegraded
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'node_zfs_zpool_state{state="degraded",source="infra"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is DEGRADED on {{ "{{" }} $labels.instance {{ "}}" }}'
+                    - uid: zfs-faulted
+                      title: ZfsPoolFaulted
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'node_zfs_zpool_state{state="faulted",source="infra"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 1m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is FAULTED on {{ "{{" }} $labels.instance {{ "}}" }}'
+                    - uid: zfs-unavail
+                      title: ZfsPoolUnavail
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'node_zfs_zpool_state{state="unavail",source="infra"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 1m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is UNAVAILABLE on {{ "{{" }} $labels.instance {{ "}}" }}'
+                - orgId: 1
+                  name: infra-watchdog
+                  folder: Infra Watchdog
+                  interval: 60s
+                  rules:
+                    - uid: grafana-watchdog
+                      title: GrafanaAlertingWatchdog
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'vector(1)'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 0s
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: none
+                      annotations:
+                        summary: "Grafana Alerting is alive"
         alertmanager:
           config:
             global:
               resolve_timeout: 5m
             route:
-              receiver: homeassistant
+              receiver: "null"
               group_by: ['alertname', 'instance']
               group_wait: 3m
               group_interval: 10m
@@ -116,36 +866,9 @@ spec:
                 - receiver: "null"
                   matchers:
                     - alertname = "Watchdog"
-                - receiver: homeassistant
-                  matchers:
-                    - severity = "critical"
-                  repeat_interval: 1h
-                  continue: true
-                - receiver: homeassistant
-                  matchers:
-                    - severity = "warning"
-                  repeat_interval: 6h
-                  continue: true
-                - receiver: slack
-                  matchers:
-                    - severity =~ "critical|warning"
-                  repeat_interval: 6h
             receivers:
-              - name: homeassistant
-                webhook_configs:
-                  - url: 'https://homeassistant.sharmamohit.com:8123/api/webhook/alertmanager-infra-alerts'
-                    send_resolved: true
-              - name: slack
-                slack_configs:
-                  - api_url_file: '/etc/alertmanager/secrets/alertmanager-slack-webhook/slack-webhook-url'
-                    channel: '#homelab-alerts'
-                    send_resolved: true
-                    title: '{{ if eq .Status "firing" }}:fire:{{ else }}:white_check_mark:{{ end }} {{ .CommonLabels.alertname }}'
-                    text: '{{ range .Alerts }}*{{ .Labels.severity | toUpper }}* - {{ .Labels.instance }}\n{{ .Annotations.summary }}\n{{ end }}'
               - name: "null"
           alertmanagerSpec:
-            secrets:
-              - alertmanager-slack-webhook
             retention: 120h
             storage:
               volumeClaimTemplate:
@@ -223,8 +946,8 @@ spec:
                       summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} will fill within 24 hours"
                   - alert: HighMemoryUsage
                     expr: |
-                      (1 - node_memory_MemAvailable_bytes{source="infra"}
-                      / node_memory_MemTotal_bytes{source="infra"}) > 0.90
+                      (1 - node_memory_MemAvailable_bytes{instance!="truenas",source="infra"}
+                      / node_memory_MemTotal_bytes{instance!="truenas",source="infra"}) > 0.90
                     for: 15m
                     labels:
                       severity: warning
@@ -267,7 +990,7 @@ spec:
                     annotations:
                       summary: "Pending sectors increasing on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartDiskTemperatureHigh
-                    expr: smartctl_device_temperature{temperature_type="current"} > 55
+                    expr: smartctl_device_temperature{temperature_type="current"} > 60
                     for: 10m
                     labels:
                       severity: warning

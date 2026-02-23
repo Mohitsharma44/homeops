@@ -15,6 +15,10 @@ Thumbs.db
 docker/stacks/**/.env
 docker/stacks/**/s3.json
 
+# MCP server config (may contain API tokens)
+mcp.json
+.mcp.json
+
 # Temporary files
 *.tmp
 *.bak

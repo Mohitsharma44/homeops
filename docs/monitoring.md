@@ -157,6 +157,41 @@ Grafana
 | Tempo OTLP HTTP | http://tempo.monitoring.svc:4318 |
 | Alertmanager | http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 |
 
+## Alerting
+
+All alert notifications are delivered to Slack via Grafana Alerting:
+
+```
+Grafana rules → Grafana contact point → Slack (#homelab-alerts)
+```
+
+### Grafana Alerting (Slack)
+
+Grafana evaluates its own alert rules against the Thanos datasource (`uid: thanos`) and sends notifications to Slack via a provisioned contact point. Configuration is in `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` under `grafana.alerting`.
+
+**18 rules** across 4 folders:
+
+| Folder | Eval Interval | Rules |
+|--------|---------------|-------|
+| Infra Node Health | 60s | InfraHostDown, FilesystemSpaceLow, FilesystemSpaceCritical, FilesystemWillFillIn24h, HighMemoryUsage, HighCpuLoad |
+| Infra SMART Health | 60s | SmartDiskUnhealthy, SmartReallocatedSectorsGrowing, SmartPendingSectorsGrowing, SmartDiskTemperatureHigh, SmartDiskTemperatureCritical, SmartNvmeMediaErrors, SmartNvmeCriticalWarning, SmartExporterDown |
+| Infra ZFS Health | 30s | ZfsPoolDegraded, ZfsPoolFaulted, ZfsPoolUnavail |
+| Infra Watchdog | 60s | GrafanaAlertingWatchdog |
+
+The watchdog rule (`vector(1)`) fires continuously to verify the Grafana→Slack pipeline is working. If the periodic notification stops, the pipeline is broken.
+
+### Alertmanager
+
+Alertmanager is still deployed but only routes Prometheus-generated alerts to the `"null"` receiver (silencing them). All notification delivery is handled by Grafana Alerting via Slack.
+
+### Threshold Sync Requirement
+
+Prometheus rules and Grafana rules monitor the same metrics with the same thresholds. **Changing a threshold in one place without the other causes drift.** Both are defined in the same file (`kube-prometheus-stack.yaml`), with a comment block marking this dependency.
+
+### Rule UID Stability
+
+Grafana alert rule UIDs (e.g., `infra-host-down`, `smart-temp-high`) are stable kebab-case identifiers. Changing a UID resets that rule's state history and firing timers. Avoid renaming UIDs unless necessary.
+
 ## Infrastructure Host Monitoring (Alloy)
 
 In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all infrastructure hosts outside K8s. Each host collects:
