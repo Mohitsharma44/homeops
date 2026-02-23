@@ -244,7 +244,7 @@ spec:
               - name: infra-smart-health
                 rules:
                   - alert: SmartDiskUnhealthy
-                    expr: smartctl_device_smart_status{source="docker"} != 1
+                    expr: smartctl_device_smart_status != 1
                     for: 5m
                     labels:
                       severity: critical
@@ -252,7 +252,7 @@ spec:
                       summary: "SMART health check FAILED on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartReallocatedSectorsGrowing
                     expr: |
-                      increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw",source="docker"}[24h]) > 0
+                      increase(smartctl_device_attribute{attribute_name="Reallocated_Sector_Ct",attribute_value_type="raw"}[24h]) > 0
                     for: 5m
                     labels:
                       severity: warning
@@ -260,42 +260,42 @@ spec:
                       summary: "Reallocated sectors increasing on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartPendingSectorsGrowing
                     expr: |
-                      increase(smartctl_device_attribute{attribute_name="Current_Pending_Sector",attribute_value_type="raw",source="docker"}[24h]) > 0
+                      increase(smartctl_device_attribute{attribute_name="Current_Pending_Sector",attribute_value_type="raw"}[24h]) > 0
                     for: 5m
                     labels:
                       severity: warning
                     annotations:
                       summary: "Pending sectors increasing on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartDiskTemperatureHigh
-                    expr: smartctl_device_temperature{temperature_type="current",source="docker"} > 55
+                    expr: smartctl_device_temperature{temperature_type="current"} > 55
                     for: 10m
                     labels:
                       severity: warning
                     annotations:
                       summary: "Disk temperature {{ $value }}C on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartDiskTemperatureCritical
-                    expr: smartctl_device_temperature{temperature_type="current",source="docker"} > 65
+                    expr: smartctl_device_temperature{temperature_type="current"} > 65
                     for: 5m
                     labels:
                       severity: critical
                     annotations:
                       summary: "Disk temperature critical {{ $value }}C on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartNvmeMediaErrors
-                    expr: increase(smartctl_device_media_errors{source="docker"}[24h]) > 0
+                    expr: increase(smartctl_device_media_errors[24h]) > 0
                     for: 5m
                     labels:
                       severity: warning
                     annotations:
                       summary: "NVMe media errors increasing on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartNvmeCriticalWarning
-                    expr: smartctl_device_critical_warning{source="docker"} > 0
+                    expr: smartctl_device_critical_warning > 0
                     for: 5m
                     labels:
                       severity: critical
                     annotations:
                       summary: "NVMe critical warning on {{ $labels.device }} ({{ $labels.instance }})"
                   - alert: SmartExporterDown
-                    expr: up{job="smartctl", source="docker"} == 0
+                    expr: up{job="smartctl"} == 0
                     for: 5m
                     labels:
                       severity: warning
