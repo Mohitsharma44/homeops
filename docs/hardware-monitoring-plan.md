@@ -165,9 +165,9 @@ alertmanager:
 
 These work with existing node_exporter metrics (no new exporters needed).
 
-**Note on `source` label**: All non-K8s Alloy instances (both Docker-managed and bare-metal systemd) use `source = "docker"` as an external label. The name is historical — it means "not Kubernetes", not literally "runs Docker". This keeps alert expressions simple and avoids a disruptive rename of existing Docker Alloy instances. The bare-metal pve/truenas Alloy configs use the same label for consistency.
+**Note on `source` label**: All non-K8s Alloy instances (both Docker-managed and bare-metal systemd) use `source = "infra"` as an external label, identifying them as infrastructure hosts managed outside the K8s cluster. The bare-metal pve/truenas Alloy configs use the same label for consistency.
 
-- `InfraHostDown`: `up{job="integrations/unix", source="docker"} == 0` for 5m — critical
+- `InfraHostDown`: `up{job="integrations/unix", source="infra"} == 0` for 5m — critical
 - `FilesystemSpaceLow`: >85% full for 15m — warning
 - `FilesystemSpaceCritical`: >95% full for 5m — critical
 - `FilesystemWillFillIn24h`: linear prediction — warning
@@ -350,9 +350,9 @@ prometheus.relabel "instance" {
 // Remote write: push metrics to K8s Prometheus
 // ============================================================
 prometheus.remote_write "prometheus" {
-  // "docker" is a historical label meaning "non-K8s infrastructure".
+  // "infra" identifies non-K8s infrastructure hosts.
   external_labels = {
-    source = "docker",
+    source = "infra",
   }
   endpoint {
     url = sys.env("PROMETHEUS_URL")
@@ -508,10 +508,10 @@ prometheus.relabel "instance" {
 // Remote write: push metrics to K8s Prometheus
 // ============================================================
 prometheus.remote_write "prometheus" {
-  // "docker" is a historical label meaning "non-K8s infrastructure".
+  // "infra" identifies non-K8s infrastructure hosts.
   // Bare-metal hosts use the same label for consistent alert expressions.
   external_labels = {
-    source = "docker",
+    source = "infra",
   }
   endpoint {
     url = sys.env("PROMETHEUS_URL")
@@ -783,7 +783,7 @@ If credentials need to be rotated:
 |----|---------|------------|
 | A1 | Warnings never reach HA (routing bug) | Added explicit warning→HA route with `continue: true` |
 | A2 | Watchdog spams phone | Routed to `null` receiver; documented DMS replacement |
-| A3 | `source="docker"` label wrong for bare-metal | Kept for alert expression compatibility; documented as historical naming |
+| A3 | `source="docker"` label wrong for bare-metal | Renamed to `source="infra"` to accurately reflect infrastructure hosts |
 | A4 | No journal shipping from pve/truenas | Added `loki.source.journal` to River config; `alloy` user added to `systemd-journal` group |
 | A5 | smartctl_exporter shared template binds 0.0.0.0 | Changed to `127.0.0.1:9633` |
 | A6 | server04 `/dev/sde` silently unmonitored | Explicitly listed in `--smartctl.device` flags |

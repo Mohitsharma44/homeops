@@ -108,7 +108,7 @@ configs:
 
         prometheus.remote_write "prometheus" {
           external_labels = {
-            source = "docker",
+            source = "infra",
           }
 
           endpoint {

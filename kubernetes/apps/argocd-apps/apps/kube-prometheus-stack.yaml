@@ -186,7 +186,7 @@ spec:
               - name: infra-node-health
                 rules:
                   - alert: InfraHostDown
-                    expr: up{job="integrations/unix", source="docker"} == 0
+                    expr: up{job="integrations/unix", source="infra"} == 0
                     for: 5m
                     labels:
                       severity: critical
@@ -194,8 +194,8 @@ spec:
                       summary: "Host {{ $labels.instance }} is unreachable"
                   - alert: FilesystemSpaceLow
                     expr: |
-                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}
-                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="docker"}) > 0.85
+                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"}
+                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="infra"}) > 0.85
                     for: 15m
                     labels:
                       severity: warning
@@ -203,8 +203,8 @@ spec:
                       summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | humanizePercentage }} full"
                   - alert: FilesystemSpaceCritical
                     expr: |
-                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}
-                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="docker"}) > 0.95
+                      (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"}
+                      / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",source="infra"}) > 0.95
                     for: 5m
                     labels:
                       severity: critical
@@ -213,7 +213,7 @@ spec:
                   - alert: FilesystemWillFillIn24h
                     expr: |
                       predict_linear(
-                        node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="docker"}[6h],
+                        node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"}[6h],
                         24*3600
                       ) < 0
                     for: 1h
@@ -223,8 +223,8 @@ spec:
                       summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} will fill within 24 hours"
                   - alert: HighMemoryUsage
                     expr: |
-                      (1 - node_memory_MemAvailable_bytes{source="docker"}
-                      / node_memory_MemTotal_bytes{source="docker"}) > 0.90
+                      (1 - node_memory_MemAvailable_bytes{source="infra"}
+                      / node_memory_MemTotal_bytes{source="infra"}) > 0.90
                     for: 15m
                     labels:
                       severity: warning
@@ -233,7 +233,7 @@ spec:
                   - alert: HighCpuLoad
                     expr: |
                       (1 - avg by (instance)
-                      (rate(node_cpu_seconds_total{mode="idle",source="docker"}[10m]))) > 0.90
+                      (rate(node_cpu_seconds_total{mode="idle",source="infra"}[10m]))) > 0.90
                     for: 30m
                     labels:
                       severity: warning
@@ -306,21 +306,21 @@ spec:
               - name: infra-zfs-health
                 rules:
                   - alert: ZfsPoolDegraded
-                    expr: node_zfs_zpool_state{state="degraded", source="docker"} == 1
+                    expr: node_zfs_zpool_state{state="degraded", source="infra"} == 1
                     for: 5m
                     labels:
                       severity: critical
                     annotations:
                       summary: "ZFS pool {{ $labels.zpool }} is DEGRADED on {{ $labels.instance }}"
                   - alert: ZfsPoolFaulted
-                    expr: node_zfs_zpool_state{state="faulted", source="docker"} == 1
+                    expr: node_zfs_zpool_state{state="faulted", source="infra"} == 1
                     for: 1m
                     labels:
                       severity: critical
                     annotations:
                       summary: "ZFS pool {{ $labels.zpool }} is FAULTED on {{ $labels.instance }}"
                   - alert: ZfsPoolUnavail
-                    expr: node_zfs_zpool_state{state="unavail", source="docker"} == 1
+                    expr: node_zfs_zpool_state{state="unavail", source="infra"} == 1
                     for: 1m
                     labels:
                       severity: critical

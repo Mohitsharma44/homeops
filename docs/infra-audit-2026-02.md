@@ -220,7 +220,7 @@ Same as Security #14. Daily backup stays on the komodo LXC container with no off
 
 Alloy collects metrics from all Docker hosts but no dashboards are provisioned as code. Docker-specific views require manual creation.
 
-- Fix: Create a ConfigMap with a Docker hosts dashboard (node_exporter + cAdvisor, filtered by `source="docker"`).
+- Fix: Create a ConfigMap with a Docker hosts dashboard (node_exporter + cAdvisor, filtered by `source="infra"`).
 - Effort: Medium
 
 **14. Single age key with no rotation procedure documented**

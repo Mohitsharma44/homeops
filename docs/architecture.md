@@ -404,7 +404,7 @@ Emergency backdoor: SSH
 │                     │ Retention: raw=7d, 5m=30d, 1h=180d  │            │   │
 │                     └─────────────────────────────────────┘            │   │
 │                                                                        │   │
-│  All metrics carry: source="docker", instance="<INSTANCE_NAME>"       │   │
+│  All metrics carry: source="infra", instance="<INSTANCE_NAME>"       │   │
 │  job="node" (host metrics), job="cadvisor" (container metrics)         │   │
 └────────────────────────────────────────────────────────────────────────┘
 
