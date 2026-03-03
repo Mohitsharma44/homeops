@@ -70,6 +70,15 @@ executions = [
   { execution.type = "DeployStack", execution.params.stack = "aegis-pangolin" },
 ]
 
+# Pangolin redeploy takes ~2min and drops the WireGuard tunnel while Gerbil restarts.
+# Komodo marks the VPS Periphery as unreachable during this window.
+# Sleep 30s to let the tunnel re-establish and Komodo re-detect the server as healthy.
+[[procedure.config.stage]]
+name = "Wait for tunnel recovery"
+executions = [
+  { execution.type = "Sleep", execution.params.duration_ms = 30000 },
+]
+
 [[procedure.config.stage]]
 name = "Tunnel Agent"
 executions = [

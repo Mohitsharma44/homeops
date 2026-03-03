@@ -80,6 +80,8 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
   All other stacks have `auto_update = true` and redeploy automatically after a sync. For these 4, deploy manually:
   - `komodo-core`: `km execute deploy-stack komodo-core`
   - VPS tunnel stacks: `km execute run-procedure deploy-vps-infra` (runs in safe order)
+
+- **deploy-vps-infra failure mode**: After `aegis-pangolin` redeploys (~2min), Komodo marks the VPS server unreachable while the WireGuard tunnel is down. The procedure includes a 30s sleep after the Pangolin stage to let the tunnel recover before proceeding. Even with the sleep, `aegis-newt` deploys may show as "failed" (connection reset) while the container itself comes up fine — always verify with `ssh hs docker ps` rather than relying solely on Komodo's success status.
 - **VPS Pangolin connectivity**: Komodo reaches VPS Periphery via Pangolin private resource tunnel (`periphery.private.sharmamohit.com:8120`). A Machine Client on komodo (`/opt/pangolin-client/`) provides the WireGuard route. If the tunnel is down, use SSH (`ssh hs`) as the emergency backdoor.
 - **VPS network segmentation**: VPS uses multi-network isolation. Only containers needing WAN access touch `traefik-public` or `pangolin-internal`. Periphery is isolated on `newt-periphery` only (no ports published). LLDAP is on `identity-internal` only (PocketID bridges both networks).
 - **Komodo file_paths**: Only the first entry is used as the compose file. Komodo does NOT support Docker Compose file merge (multiple `-f` flags). To customize a shared stack for one host, create a standalone copy instead of an override.
