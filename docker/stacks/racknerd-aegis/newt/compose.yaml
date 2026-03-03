@@ -1,6 +1,6 @@
 services:
   newt:
-    image: fosrl/newt:1.9.0
+    image: fosrl/newt:1.10.1
     container_name: pangolin-newt
     restart: unless-stopped
     networks:

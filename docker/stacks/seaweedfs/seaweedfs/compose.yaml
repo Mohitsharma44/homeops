@@ -1,6 +1,6 @@
 services:
   master:
-    image: chrislusf/seaweedfs:4.06
+    image: chrislusf/seaweedfs:4.13
     container_name: seaweedfs-master
     restart: unless-stopped
     ports:
@@ -38,7 +38,7 @@ services:
       - "no-new-privileges:true"
 
   volume:
-    image: chrislusf/seaweedfs:4.06
+    image: chrislusf/seaweedfs:4.13
     container_name: seaweedfs-volume
     restart: unless-stopped
     ports:
@@ -81,7 +81,7 @@ services:
       - "no-new-privileges:true"
 
   filer:
-    image: chrislusf/seaweedfs:4.06
+    image: chrislusf/seaweedfs:4.13
     container_name: seaweedfs-filer
     restart: unless-stopped
     ports:
@@ -123,7 +123,7 @@ services:
       - "no-new-privileges:true"
 
   s3:
-    image: chrislusf/seaweedfs:4.06
+    image: chrislusf/seaweedfs:4.13
     container_name: seaweedfs-s3
     restart: unless-stopped
     ports:
@@ -160,7 +160,7 @@ services:
       - "no-new-privileges:true"
 
   webdav:
-    image: chrislusf/seaweedfs:4.06
+    image: chrislusf/seaweedfs:4.13
     container_name: seaweedfs-webdav
     restart: unless-stopped
     ports:
