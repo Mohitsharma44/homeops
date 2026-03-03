@@ -7,6 +7,7 @@ server_id = "omni"
 file_paths = ["docker/stacks/omni/omni/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
+auto_update = true
 [stack.config.pre_deploy]
 path = "docker/stacks/omni/omni"
 command = "sops-decrypt.sh"
@@ -20,6 +21,7 @@ server_id = "omni"
 file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
+auto_update = true
 environment = """
 INSTANCE_NAME=omni
 """

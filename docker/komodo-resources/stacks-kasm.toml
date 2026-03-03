@@ -7,6 +7,7 @@ server_id = "kasm"
 file_paths = ["docker/stacks/kasm/newt/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
+auto_update = true
 environment = """
 PANGOLIN_ENDPOINT=https://pangolin.proxy.sharmamohit.com
 """
@@ -23,6 +24,7 @@ server_id = "kasm"
 file_paths = ["docker/stacks/shared/alloy/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
+auto_update = true
 environment = """
 INSTANCE_NAME=kasm
 """
