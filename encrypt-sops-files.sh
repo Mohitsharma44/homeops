@@ -6,7 +6,7 @@ for file in "$@"; do
 	if [[ -f "$file" ]]; then
 		if ! grep -q 'ENC\[[A-Z0-9_]*,data:.*,type:.*\]' "$file"; then
 			echo "File $file is not encrypted, encrypting..."
-			if [[ "$file" =~ \.yaml ]]; then
+			if [[ "$file" =~ \.(yaml|yml) ]]; then
 				sops --encrypt --in-place --input-type=yaml "$file" || EXIT_CODE=1
 			elif [[ "$file" =~ \.json ]]; then
 				sops --encrypt --in-place --input-type=json "$file" || EXIT_CODE=1
