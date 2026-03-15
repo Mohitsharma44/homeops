@@ -11,6 +11,33 @@
     - name: Gather facts
       ansible.builtin.setup:
 
+    # ── Local SSD Pool (VM/LXC storage) ──────────────
+    # Must run before lae.proxmox role which registers storage backends
+    - name: Check if local-ssd pool exists
+      ansible.builtin.command: zpool list {{ local_ssd_pool.name }}
+      register: local_ssd_pool_check
+      changed_when: false
+      failed_when: false
+
+    - name: Wipe old partition tables on local-ssd drives
+      ansible.builtin.command: sgdisk --zap-all {{ item }}
+      loop: "{{ local_ssd_pool.drives }}"
+      when: local_ssd_pool_check.rc != 0
+
+    - name: Create local-ssd ZFS mirror pool
+      ansible.builtin.command: >
+        zpool create
+        -o ashift={{ local_ssd_pool.properties.ashift }}
+        -O compression={{ local_ssd_pool.properties.compression }}
+        -O atime={{ local_ssd_pool.properties.atime }}
+        -O acltype=posixacl
+        -O xattr=sa
+        -O dnodesize=auto
+        {{ local_ssd_pool.name }}
+        {{ local_ssd_pool.vdev }}
+        {{ local_ssd_pool.drives | join(' ') }}
+      when: local_ssd_pool_check.rc != 0
+
   roles:
     - role: lae.proxmox
 

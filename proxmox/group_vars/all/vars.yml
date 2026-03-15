@@ -36,6 +36,25 @@ pve_storages:
     pool: ssdpool0
     sparse: true
 
+  - name: local-ssd
+    type: zfspool
+    content: ["images", "rootdir"]
+    pool: local-ssd
+    sparse: true
+
+# ── Local SSD Pool (VM/LXC storage) ────────────────
+# ZFS mirror on 2x Samsung 870 EVO 1TB (was TrueNAS ssdpool1)
+local_ssd_pool:
+  name: local-ssd
+  vdev: mirror
+  drives:
+    - /dev/disk/by-id/ata-Samsung_SSD_870_EVO_1TB_S625NZ0R909545W
+    - /dev/disk/by-id/ata-Samsung_SSD_870_EVO_1TB_S625NZ0R909519P
+  properties:
+    ashift: 12
+    compression: lz4
+    atime: "off"
+
 # ── Users ───────────────────────────────────────────
 pve_groups:
   - name: ops
