@@ -1,7 +1,7 @@
 # Claude Code Instructions - Homeops Repository
 
 ## What This Repo Is
-GitOps repository for homelab infrastructure. Manages both **Kubernetes** (Flux + ArgoCD) and **Docker** containers (Komodo GitOps) from a single repo with unified secret management (SOPS + age).
+GitOps repository for homelab infrastructure. Manages **Kubernetes** (Flux + ArgoCD), **Docker** containers (Komodo GitOps), and **Proxmox** nodes (Ansible) from a single repo with unified secret management (SOPS + age).
 
 Docker/Komodo-specific instructions are in `docker/CLAUDE.md` (loaded automatically when working in `docker/`).
 
@@ -9,6 +9,7 @@ Docker/Komodo-specific instructions are in `docker/CLAUDE.md` (loaded automatica
 ```
 Kubernetes: Git Push → Flux Reconciles → Infrastructure Ready → ArgoCD Deploys Apps
 Docker:     Git Push → Komodo ResourceSync → pre_deploy (SOPS decrypt) → docker compose up
+Proxmox:    ansible-playbook proxmox/site.yml → lae.proxmox role + custom tasks
 ```
 
 Kubernetes deployment chain (`kubernetes/clusters/minipcs/`):
@@ -28,6 +29,13 @@ kubernetes/
     ├── argocd-apps/apps/  # ArgoCD Application manifests go HERE
     └── minipcs/           # Flux overlay (deploys argocd + root-app)
 docker/                    # Docker infrastructure (Komodo GitOps) — see docker/CLAUDE.md
+proxmox/                   # Proxmox node config (Ansible + lae.proxmox role)
+├── site.yml               # Main playbook
+├── inventory/hosts.yml    # R720XD standalone node
+├── group_vars/all/
+│   ├── vars.yml           # Non-secret config
+│   └── secrets.sops.yml   # SOPS-encrypted credentials
+└── templates/             # Alloy, Sanoid, smartctl-exporter configs
 ```
 
 ## Key Files to Read First
@@ -38,13 +46,14 @@ docker/                    # Docker infrastructure (Komodo GitOps) — see docke
 
 ## Secrets (SOPS + age)
 
-Both K8s and Docker use the same SOPS + age key pair.
+K8s, Docker, and Proxmox all use the same SOPS + age key pair.
 
 - Config: `.sops.yaml` at repo root
 - Public key: `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk`
 - Private key: `~/.sops/key.txt` (local), `/etc/sops/age/keys.txt` (Docker hosts), `sops-age` secret (K8s)
 - K8s: `*secret.yaml` — Flux decrypts in-cluster
 - Docker: `.sops.env`/`.sops.json` next to compose files — Periphery decrypts at deploy time
+- Proxmox: `*.sops.yml` in `proxmox/group_vars/` — `community.sops` Ansible plugin decrypts at playbook runtime
 - Never commit unencrypted secrets (pre-commit hooks block this)
 
 ```bash
