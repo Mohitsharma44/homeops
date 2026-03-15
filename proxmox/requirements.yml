@@ -1,0 +1,8 @@
+---
+roles:
+  - name: lae.proxmox
+    version: "v1.10.1"
+
+collections:
+  - name: community.sops
+    version: "1.9.2"

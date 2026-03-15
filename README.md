@@ -1,25 +1,25 @@
 # Homeops
 
-GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via Flux + ArgoCD) and **Docker** containers (via Komodo) from a single repo with unified secret management (SOPS + age).
+GitOps repository for homelab infrastructure. Manages **Kubernetes** (via Flux + ArgoCD), **Docker** containers (via Komodo), and **Proxmox** nodes (via Ansible) from a single repo with unified secret management (SOPS + age).
 
 ## Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          homeops (this repo)                            │
-├─────────────────────────────────┬───────────────────────────────────────┤
-│   Kubernetes (Flux + ArgoCD)    │       Docker (Komodo GitOps)          │
-│                                 │                                       │
-│   3-node K8s cluster (minipcs)  │   6 Docker hosts                      │
-│   Infrastructure: MetalLB,      │   Hosts: komodo, nvr, kasm,           │
-│     Ingress, Cert-Manager,      │     omni, server04, seaweedfs         │
-│     Rook-Ceph                   │   13 stacks across all hosts          │
-│   Apps: Monitoring stack        │   Monitoring: Alloy on every host     │
-│     (Prometheus, Thanos, Loki,  │   Secrets: SOPS + age (pre_deploy)    │
-│     Tempo, Alloy, Grafana)      │                                       │
-├─────────────────────────────────┴───────────────────────────────────────┤
-│   Shared: SOPS + age encryption, *.sharmamohit.com domain,             │
-│           pre-commit hooks, observability (all telemetry → Grafana)     │
+├──────────────────┬──────────────────────┬────────────────────────────────┤
+│  Kubernetes      │  Docker              │  Proxmox                       │
+│  (Flux + ArgoCD) │  (Komodo GitOps)     │  (Ansible)                     │
+│                  │                      │                                │
+│  3-node cluster  │  6 Docker hosts      │  R720XD standalone node        │
+│  Infrastructure: │  komodo, nvr, kasm,  │  ZFS storage (pool0, ssdpool0) │
+│   MetalLB,       │  omni, server04,     │  SeaweedFS VM (S3/WebDAV)      │
+│   Ingress,       │  seaweedfs           │  NFS exports, Sanoid snapshots │
+│   Cert-Manager,  │  13 stacks           │  Alloy + smartctl monitoring   │
+│   Rook-Ceph      │                      │                                │
+├──────────────────┴──────────────────────┴────────────────────────────────┤
+│  Shared: SOPS + age encryption, *.sharmamohit.com domain,               │
+│          pre-commit hooks, observability (all telemetry → Grafana)       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -42,6 +42,11 @@ GitOps repository for homelab infrastructure. Manages both **Kubernetes** (via F
 │   ├── komodo-resources/       # TOML resource declarations
 │   ├── stacks/                 # Compose files + SOPS-encrypted secrets
 │   └── periphery/              # Custom periphery image (SOPS + age)
+├── proxmox/                    # Proxmox node config (Ansible)
+│   ├── site.yml                # Main playbook (lae.proxmox + NFS + Sanoid + monitoring)
+│   ├── inventory/hosts.yml     # R720XD at 192.168.11.15
+│   ├── group_vars/all/         # vars.yml + secrets.sops.yml
+│   └── templates/              # Alloy, Sanoid, smartctl-exporter configs
 └── docs/                       # Additional documentation
     ├── ceph.md                 # Rook-Ceph storage
     ├── monitoring.md           # Observability stack architecture
@@ -129,6 +134,26 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 4. Secrets are SOPS-encrypted `.sops.env` files decrypted at deploy time by a custom periphery image (komodo host uses systemd Periphery with native sops+age)
 5. Alloy monitoring runs on every host, pushing metrics/logs to the K8s observability stack
 
+## Proxmox (Ansible)
+
+Manages Proxmox VE node configuration via Ansible. See [proxmox/README.md](proxmox/README.md).
+
+### Node: R720XD (standalone)
+
+| Property | Value |
+|----------|-------|
+| **IP** | 192.168.11.15 |
+| **Hardware** | Dell R720XD, 256GB RAM, 14 drives |
+| **ZFS Pools** | pool0 (21.8T raidz1), ssdpool0 (7.27T raidz1) — both encrypted (aes-256-gcm) |
+| **VMs** | SeaweedFS (S3 object storage, 4 buckets) |
+| **Services** | NFS export (/mnt/pool0/nvr for Frigate), Sanoid snapshots, Alloy, smartctl-exporter |
+
+```bash
+cd proxmox
+ansible-galaxy install -r requirements.yml
+ansible-playbook site.yml
+```
+
 ## Observability
 
 Full metrics, logs, and traces stack. See [docs/monitoring.md](docs/monitoring.md) for architecture, data flow, and retention policies.
@@ -169,6 +194,7 @@ Both Kubernetes and Docker secrets use the same SOPS + age encryption with the s
 |-------|--------------|------------|
 | **Kubernetes** | `*secret.yaml` (encrypts `data`/`stringData` fields) | Flux decrypts in-cluster via `sops-age` secret |
 | **Docker** | `.sops.env`, `.sops.json` (encrypts entire file) | Periphery agent decrypts at deploy time via `pre_deploy` hook |
+| **Proxmox** | `*.sops.yml` (encrypts all values) | `community.sops` Ansible vars plugin decrypts at playbook runtime |
 
 **Key:**
 - Public: `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk`

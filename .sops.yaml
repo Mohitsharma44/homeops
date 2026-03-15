@@ -1,4 +1,7 @@
 creation_rules:
+  # Proxmox/Ansible secrets (encrypt all values in .sops.yml files)
+  - path_regex: proxmox/.*\.sops\.yml$
+    age: age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk
   # Docker/Komodo secrets (encrypt entire .sops.env and .sops.json files)
   - path_regex: docker/stacks/.*\.sops\.(env|json)$
     age: age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghqwzj5xk
