@@ -85,6 +85,7 @@ alloy_instance_name: "r720xd"
 alloy_prometheus_url: "https://prometheus.sharmamohit.com/api/v1/write"
 alloy_loki_url: "https://loki.sharmamohit.com/loki/api/v1/push"
 smartctl_exporter_version: "0.14.0"
+smartctl_exporter_checksum: "875983cd27affc5a682401930e5a8eea3f06c325fe6d6a7228c5547d882685b3"
 smartctl_exporter_listen: "127.0.0.1:9633"
 smartctl_exporter_interval: "120s"
 

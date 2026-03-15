@@ -50,6 +50,15 @@
           - nfs-common
         state: present
 
+    - name: Ensure NFS export directories exist
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ nfs_exports }}"
+
     - name: Configure NFS exports
       ansible.builtin.lineinfile:
         path: /etc/exports
@@ -110,9 +119,16 @@
         mode: "0644"
 
     - name: Dearmor and install Grafana GPG key
-      ansible.builtin.shell:
-        cmd: gpg --dearmor < /tmp/grafana-gpg.key > /etc/apt/keyrings/grafana.gpg
+      ansible.builtin.command:
+        cmd: gpg --batch --yes --dearmor --output /etc/apt/keyrings/grafana.gpg /tmp/grafana-gpg.key
         creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Set Grafana keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/grafana.gpg
+        owner: root
+        group: root
+        mode: "0644"
 
     - name: Add Grafana APT repository
       ansible.builtin.apt_repository:
@@ -132,8 +148,8 @@
         src: alloy-config.alloy.j2
         dest: /etc/alloy/config.alloy
         owner: root
-        group: root
-        mode: "0644"
+        group: alloy
+        mode: "0640"
       notify: restart alloy
 
     - name: Deploy Alloy environment file
@@ -182,6 +198,7 @@
       ansible.builtin.get_url:
         url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/smartctl_exporter-{{ smartctl_exporter_version }}.linux-amd64.tar.gz"
         dest: /tmp/smartctl_exporter.tar.gz
+        checksum: "sha256:{{ smartctl_exporter_checksum }}"
 
     - name: Extract smartctl_exporter
       ansible.builtin.unarchive:

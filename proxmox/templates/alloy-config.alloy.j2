@@ -49,8 +49,8 @@ prometheus.remote_write "prometheus" {
   endpoint {
     url = "{{ alloy_prometheus_url }}"
     basic_auth {
-      username = "{{ vault_alloy_basic_auth_username }}"
-      password = "{{ vault_alloy_basic_auth_password }}"
+      username = sys.env("BASIC_AUTH_USERNAME")
+      password = sys.env("BASIC_AUTH_PASSWORD")
     }
   }
 }
@@ -95,8 +95,8 @@ loki.write "loki" {
     url       = "{{ alloy_loki_url }}"
     tenant_id = "homelab"
     basic_auth {
-      username = "{{ vault_alloy_basic_auth_username }}"
-      password = "{{ vault_alloy_basic_auth_password }}"
+      username = sys.env("BASIC_AUTH_USERNAME")
+      password = sys.env("BASIC_AUTH_PASSWORD")
     }
   }
 }
