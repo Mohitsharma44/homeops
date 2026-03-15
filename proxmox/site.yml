@@ -1,0 +1,219 @@
+---
+- name: Configure Proxmox VE on R720XD
+  hosts: all
+  become: true
+
+  pre_tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+  roles:
+    - role: lae.proxmox
+
+  tasks:
+    # ── NFS Export ────────────────────────────────────
+    - name: Install NFS kernel server
+      ansible.builtin.apt:
+        name:
+          - nfs-kernel-server
+          - nfs-common
+        state: present
+
+    - name: Configure NFS exports
+      ansible.builtin.lineinfile:
+        path: /etc/exports
+        line: "{{ item.path }} {{ item.network }}({{ item.options }})"
+        regexp: "^{{ item.path | regex_escape }}\\s"
+        create: yes
+      loop: "{{ nfs_exports }}"
+      notify: reload nfs exports
+
+    - name: Enable and start NFS server
+      ansible.builtin.systemd:
+        name: nfs-kernel-server
+        state: started
+        enabled: yes
+
+    # ── Sanoid (ZFS Snapshots) ────────────────────────
+    - name: Install Sanoid
+      ansible.builtin.apt:
+        name: sanoid
+        state: present
+
+    - name: Ensure Sanoid config directory exists
+      ansible.builtin.file:
+        path: /etc/sanoid
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Sanoid config
+      ansible.builtin.template:
+        src: sanoid.conf.j2
+        dest: /etc/sanoid/sanoid.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart sanoid timer
+
+    - name: Enable Sanoid timers
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - sanoid.timer
+
+    # ── Grafana APT Repository ────────────────────────
+    - name: Ensure keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /tmp/grafana-gpg.key
+        mode: "0644"
+
+    - name: Dearmor and install Grafana GPG key
+      ansible.builtin.shell:
+        cmd: gpg --dearmor < /tmp/grafana-gpg.key > /etc/apt/keyrings/grafana.gpg
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        filename: grafana
+        state: present
+        update_cache: yes
+
+    # ── Alloy ─────────────────────────────────────────
+    - name: Install Alloy
+      ansible.builtin.apt:
+        name: alloy
+        state: present
+
+    - name: Deploy Alloy config
+      ansible.builtin.template:
+        src: alloy-config.alloy.j2
+        dest: /etc/alloy/config.alloy
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart alloy
+
+    - name: Deploy Alloy environment file
+      ansible.builtin.template:
+        src: alloy-env.j2
+        dest: /etc/default/alloy-env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: restart alloy
+
+    - name: Ensure Alloy systemd override directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/alloy.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configure Alloy systemd override for env file
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alloy.service.d/override.conf
+        content: |
+          [Service]
+          EnvironmentFile=/etc/default/alloy-env
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - daemon reload
+        - restart alloy
+
+    - name: Enable and start Alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: started
+        enabled: yes
+
+    # ── smartctl-exporter ─────────────────────────────
+    - name: Install smartmontools
+      ansible.builtin.apt:
+        name: smartmontools
+        state: present
+
+    - name: Download smartctl_exporter
+      ansible.builtin.get_url:
+        url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/smartctl_exporter-{{ smartctl_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/smartctl_exporter.tar.gz
+
+    - name: Extract smartctl_exporter
+      ansible.builtin.unarchive:
+        src: /tmp/smartctl_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Install smartctl_exporter binary
+      ansible.builtin.copy:
+        src: "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.linux-amd64/smartctl_exporter"
+        dest: /usr/local/bin/smartctl_exporter
+        owner: root
+        group: root
+        mode: "0755"
+        remote_src: yes
+      notify: restart smartctl-exporter
+
+    - name: Deploy smartctl-exporter systemd service
+      ansible.builtin.template:
+        src: smartctl-exporter.service.j2
+        dest: /etc/systemd/system/smartctl-exporter.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - daemon reload
+        - restart smartctl-exporter
+
+    - name: Enable and start smartctl-exporter
+      ansible.builtin.systemd:
+        name: smartctl-exporter
+        state: started
+        enabled: yes
+
+    # ── Cleanup ───────────────────────────────────────
+    - name: Remove smartctl_exporter archive
+      ansible.builtin.file:
+        path: /tmp/smartctl_exporter.tar.gz
+        state: absent
+
+  handlers:
+    - name: reload nfs exports
+      ansible.builtin.command: exportfs -ra
+
+    - name: restart sanoid timer
+      ansible.builtin.systemd:
+        name: sanoid.timer
+        state: restarted
+
+    - name: daemon reload
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: restart alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: restarted
+
+    - name: restart smartctl-exporter
+      ansible.builtin.systemd:
+        name: smartctl-exporter
+        state: restarted

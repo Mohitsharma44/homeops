@@ -1,0 +1,90 @@
+---
+# Proxmox VE Configuration - R720XD Standalone Node
+# Uses lae.proxmox role for base configuration
+
+# ── Core ────────────────────────────────────────────
+pve_group: all
+pve_cluster_enabled: no
+
+# ── Repository (no-subscription) ────────────────────
+pve_repository:
+  uris: http://download.proxmox.com/debian/pve
+  suites: "{{ ansible_distribution_release }}"
+  components: pve-no-subscription
+pve_remove_subscription_warning: true
+pve_run_proxmox_upgrades: true
+pve_check_for_kernel_update: true
+pve_reboot_on_kernel_update: false
+
+# ── ZFS ─────────────────────────────────────────────
+pve_zfs_enabled: yes
+# 192GB ARC max (leaves 64GB for VMs/system out of 256GB total)
+pve_zfs_options: "zfs_arc_max=206158430208"
+
+# ── Storage Backends ────────────────────────────────
+# Pools must already be imported before running this playbook
+pve_storages:
+  - name: pool0-store
+    type: zfspool
+    content: ["images", "rootdir"]
+    pool: pool0
+    sparse: true
+
+  - name: ssdpool0-store
+    type: zfspool
+    content: ["images", "rootdir"]
+    pool: ssdpool0
+    sparse: true
+
+# ── Users ───────────────────────────────────────────
+pve_groups:
+  - name: ops
+    comment: Operations
+
+pve_users:
+  - name: root@pam
+    email: mohitsharma44@gmail.com
+
+pve_acls:
+  - path: /
+    roles: ["Administrator"]
+    groups: ["ops"]
+
+# ── Datacenter ──────────────────────────────────────
+pve_datacenter_cfg:
+  keyboard: en-us
+
+# ── NFS Export ──────────────────────────────────────
+# Not handled by lae.proxmox role — configured in site.yml tasks
+nfs_exports:
+  - path: /mnt/pool0/nvr
+    network: "192.168.11.0/24"
+    options: "rw,sync,no_subtree_check,no_root_squash"
+
+# ── Monitoring ──────────────────────────────────────
+alloy_instance_name: "r720xd"
+alloy_prometheus_url: "https://prometheus.sharmamohit.com/api/v1/write"
+alloy_loki_url: "https://loki.sharmamohit.com/loki/api/v1/push"
+smartctl_exporter_version: "0.14.0"
+smartctl_exporter_listen: "127.0.0.1:9633"
+smartctl_exporter_interval: "120s"
+
+# ── Sanoid (ZFS snapshots) ──────────────────────────
+sanoid_datasets:
+  - name: "pool0/nvr"
+    template: data_retention
+    recursive: yes
+  - name: "ssdpool0"
+    template: data_retention
+    recursive: yes
+
+sanoid_templates:
+  data_retention:
+    frequently: 0
+    hourly: 24
+    daily: 30
+    weekly: 4
+    monthly: 12
+    yearly: 2
+    autosnap: yes
+    autoprune: yes

@@ -1,0 +1,102 @@
+// Alloy config for {{ alloy_instance_name }}
+// Managed by Ansible — do not edit manually
+
+// ============================================================
+// Host metrics (node_exporter)
+// ============================================================
+prometheus.exporter.unix "host" {
+  procfs_path = "/proc"
+  sysfs_path  = "/sys"
+  rootfs_path = "/"
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "60s"
+  job_name        = "node"
+}
+
+// ============================================================
+// SMART disk health (local smartctl_exporter)
+// ============================================================
+prometheus.scrape "smartctl" {
+  targets         = [{"__address__" = "{{ smartctl_exporter_listen }}"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "120s"
+  job_name        = "smartctl"
+}
+
+// ============================================================
+// Relabel: add instance label
+// ============================================================
+prometheus.relabel "instance" {
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = "{{ alloy_instance_name }}"
+  }
+}
+
+// ============================================================
+// Remote write: push metrics to K8s Prometheus
+// ============================================================
+prometheus.remote_write "prometheus" {
+  external_labels = {
+    source = "infra",
+  }
+  endpoint {
+    url = "{{ alloy_prometheus_url }}"
+    basic_auth {
+      username = "{{ vault_alloy_basic_auth_username }}"
+      password = "{{ vault_alloy_basic_auth_password }}"
+    }
+  }
+}
+
+// ============================================================
+// Host journal logs (syslog, kernel, hardware errors)
+// ============================================================
+loki.source.journal "host" {
+  forward_to = [loki.process.journal.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels = {
+    job = "journal",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = []
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "priority"
+  }
+}
+
+loki.process "journal" {
+  stage.static_labels {
+    values = {
+      instance = "{{ alloy_instance_name }}",
+    }
+  }
+  forward_to = [loki.write.loki.receiver]
+}
+
+// ============================================================
+// Loki write: push logs to K8s Loki
+// ============================================================
+loki.write "loki" {
+  endpoint {
+    url       = "{{ alloy_loki_url }}"
+    tenant_id = "homelab"
+    basic_auth {
+      username = "{{ vault_alloy_basic_auth_username }}"
+      password = "{{ vault_alloy_basic_auth_password }}"
+    }
+  }
+}

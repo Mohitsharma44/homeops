@@ -7,7 +7,7 @@ repos:
         entry: encrypt-sops-files.sh
         language: script
         types: [file]
-        files: (secret\.yaml|\.sops\.(env|json))$
+        files: (secret\.yaml|\.sops\.(env|json|yml))$
 
   - repo: https://github.com/onedr0p/sops-pre-commit
     rev: v2.1.1
