@@ -8,7 +8,7 @@ networks:
 services:
 
   decypharr:
-    image: cy01/blackhole:latest
+    image: cy01/blackhole:beta
     container_name: decypharr
     environment:
       - PUID={{ media_stack_puid }}
@@ -23,8 +23,9 @@ services:
     security_opt:
       - apparmor:unconfined
     volumes:
-      - /opt/media-stack/config/decypharr:/app/config
+      - /opt/media-stack/config/decypharr/config.json:/app/config.json
       - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
     networks:
       - media-net
     restart: unless-stopped
@@ -45,7 +46,8 @@ services:
       - /config/transcodes:size=8G
     volumes:
       - /opt/media-stack/config/jellyfin:/config
-      - /mnt/debrid/decypharr_symlinks:/media/debrid:ro
+      - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
       - /mnt/local-media:/media/local
     networks:
       - media-net
@@ -80,6 +82,7 @@ services:
     volumes:
       - /opt/media-stack/config/radarr:/config
       - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
       - /mnt/local-media:/mnt/local-media
     networks:
       - media-net
@@ -100,6 +103,7 @@ services:
     volumes:
       - /opt/media-stack/config/sonarr:/config
       - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
       - /mnt/local-media:/mnt/local-media
     networks:
       - media-net
@@ -121,7 +125,8 @@ services:
       - "6767:6767"
     volumes:
       - /opt/media-stack/config/bazarr:/config
-      - /mnt/debrid/decypharr_symlinks:/media/debrid:ro
+      - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
       - /mnt/local-media:/media/local
     networks:
       - media-net
@@ -188,6 +193,31 @@ services:
       - jellyfin
     restart: unless-stopped
 
+  # ── FlareSolverr (Cloudflare bypass for Prowlarr) ──
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - TZ=America/Vancouver
+      - LOG_LEVEL=info
+    ports:
+      - "8191:8191"
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  # ── Tweakio (Torrentio proxy for Prowlarr) ─────────
+  tweakio:
+    image: varthe/tweakio:latest
+    container_name: tweakio
+    environment:
+      - TZ=America/Vancouver
+    ports:
+      - "3185:3185"
+    networks:
+      - media-net
+    restart: unless-stopped
+
   profilarr:
     image: santiagosayshey/profilarr:latest
     container_name: profilarr
@@ -198,7 +228,7 @@ services:
     ports:
       - "6868:6868"
     volumes:
-      - /opt/media-stack/config/profilarr:/app/data
+      - /opt/media-stack/config/profilarr:/config
     networks:
       - media-net
     depends_on:

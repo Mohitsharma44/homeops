@@ -1,30 +1,38 @@
 {
-  "debrid": {
-    "provider": "realdebrid",
-    "api_key": "{{ vault_rd_api_key }}"
-  },
-  "qbit": {
-    "port": 8282
-  },
-  "webdav": {
-    "enabled": true,
-    "port": 8282
-  },
+  "port": "8282",
+  "log_level": "info",
+  "download_folder": "/mnt/symlinks",
+  "default_download_action": "symlink",
+  "debrids": [
+    {
+      "provider": "realdebrid",
+      "name": "realdebrid",
+      "api_key": "{{ vault_rd_api_key }}",
+      "folder": "/mnt/debrid/__all__/",
+      "download_uncached": false,
+      "rate_limit": "250/minute"
+    }
+  ],
   "mount": {
-    "enabled": true,
-    "path": "/mnt/debrid",
-    "rclone_params": "--vfs-read-ahead 256M"
-  },
-  "symlinks": {
-    "enabled": true,
-    "path": "/mnt/debrid/decypharr_symlinks",
-    "categories": {
-      "movies": "movies",
-      "tv": "tv"
+    "type": "rclone",
+    "mount_path": "/mnt/debrid",
+    "rclone": {
+      "vfs_read_ahead": "256M"
     }
   },
-  "repair": {
-    "enabled": true,
-    "interval": 60
-  }
+  "qbittorrent": {
+    "port": "8282"
+  },
+  "arrs": [
+    {
+      "name": "radarr",
+      "host": "http://radarr:7878",
+      "token": "{{ vault_radarr_api_key }}"
+    },
+    {
+      "name": "sonarr",
+      "host": "http://sonarr:8989",
+      "token": "{{ vault_sonarr_api_key }}"
+    }
+  ]
 }
