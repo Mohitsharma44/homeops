@@ -1,0 +1,30 @@
+{
+  "debrid": {
+    "provider": "realdebrid",
+    "api_key": "{{ vault_rd_api_key }}"
+  },
+  "qbit": {
+    "port": 8282
+  },
+  "webdav": {
+    "enabled": true,
+    "port": 8282
+  },
+  "mount": {
+    "enabled": true,
+    "path": "/mnt/debrid",
+    "rclone_params": "--vfs-read-ahead 256M"
+  },
+  "symlinks": {
+    "enabled": true,
+    "path": "/mnt/debrid/decypharr_symlinks",
+    "categories": {
+      "movies": "movies",
+      "tv": "tv"
+    }
+  },
+  "repair": {
+    "enabled": true,
+    "interval": 60
+  }
+}
