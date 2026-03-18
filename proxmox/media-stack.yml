@@ -243,6 +243,19 @@
         state: started
         enabled: yes
 
+    # ── Docker daemon log rotation ─────────────────────
+    - name: Deploy Docker daemon config (log rotation)
+      ansible.builtin.template:
+        src: media-stack-docker-daemon.json.j2
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart docker
+
+    - name: Ensure Docker is running with latest config
+      ansible.builtin.meta: flush_handlers
+
     # ── NFS mount ─────────────────────────────────────
     - name: Create local media mount point
       ansible.builtin.file:
@@ -347,3 +360,8 @@
     - name: daemon reload
       ansible.builtin.systemd:
         daemon_reload: yes
+
+    - name: restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
