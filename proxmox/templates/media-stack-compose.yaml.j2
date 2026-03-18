@@ -13,7 +13,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "8282:8282"
     cap_add:
@@ -35,7 +35,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
       - JELLYFIN_PublishedServerUrl=http://{{ media_stack_ip }}
     ports:
       - "8096:8096"
@@ -59,7 +59,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "9696:9696"
     volumes:
@@ -74,7 +74,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "7878:7878"
     volumes:
@@ -94,7 +94,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "8989:8989"
     volumes:
@@ -114,7 +114,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     env_file:
       - .env
     ports:
@@ -136,7 +136,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "5055:5055"
     volumes:
@@ -155,7 +155,7 @@ services:
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     env_file:
       - .env
     ports:
@@ -170,12 +170,12 @@ services:
     restart: unless-stopped
 
   tunarr:
-    image: jasongdove/tunarr:latest
+    image: chrisbenincasa/tunarr:latest
     container_name: tunarr
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     env_file:
       - .env
     ports:
@@ -189,12 +189,12 @@ services:
     restart: unless-stopped
 
   profilarr:
-    image: ghcr.io/dictionarry-hub/profilarr:latest
+    image: santiagosayshey/profilarr:latest
     container_name: profilarr
     environment:
       - PUID={{ media_stack_puid }}
       - PGID={{ media_stack_pgid }}
-      - TZ=America/New_York
+      - TZ=America/Vancouver
     ports:
       - "6868:6868"
     volumes:

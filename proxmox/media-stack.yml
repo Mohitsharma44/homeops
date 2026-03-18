@@ -41,6 +41,11 @@
   gather_facts: true
 
   tasks:
+    - name: Ensure proxmoxer Python library is installed
+      ansible.builtin.apt:
+        name: python3-proxmoxer
+        state: present
+
     - name: Check if Debian 13 LXC template exists
       ansible.builtin.stat:
         path: "/var/lib/vz/template/cache/{{ media_stack_ostemplate | regex_replace('^local:vztmpl/', '') }}"
