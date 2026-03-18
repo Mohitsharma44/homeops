@@ -1,0 +1,17 @@
+#!/bin/bash
+# Checks if /mnt/debrid FUSE mount is healthy.
+# Runs every 5 minutes via cron.
+
+TEXTFILE_DIR="/var/lib/alloy/textfile"
+
+if mountpoint -q /mnt/debrid && ls /mnt/debrid/ >/dev/null 2>&1; then
+  VALUE=1
+else
+  VALUE=0
+fi
+
+cat > "${TEXTFILE_DIR}/rd_fuse.prom" <<EOF
+# HELP rd_fuse_mount_healthy Whether /mnt/debrid FUSE mount is accessible (1=ok, 0=fail)
+# TYPE rd_fuse_mount_healthy gauge
+rd_fuse_mount_healthy $VALUE
+EOF

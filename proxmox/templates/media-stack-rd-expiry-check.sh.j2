@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euo pipefail
+# Queries Real-Debrid /user API, calculates days until expiry,
+# writes Prometheus textfile metric for Alloy to pick up.
+# Runs once daily at 03:00 via cron. Single API call per run.
+#
+# Uses the "premium" field (seconds remaining) instead of "expiration"
+# because the expiration field has a known timezone bug in the RD API.
+
+TEXTFILE_DIR="/var/lib/alloy/textfile"
+PROM_FILE="${TEXTFILE_DIR}/rd_expiry.prom"
+TMPFILE="${PROM_FILE}.tmp"
+
+write_failure_metric() {
+  cat > "${TMPFILE}" <<EOF
+# HELP rd_account_expiry_check_ok Whether the last RD API check succeeded (1=ok, 0=fail)
+# TYPE rd_account_expiry_check_ok gauge
+rd_account_expiry_check_ok 0
+EOF
+  mv "${TMPFILE}" "${PROM_FILE}"
+}
+
+# Timeout after 30s, retry once on transient failure
+RESPONSE=$(curl -sf --max-time 30 --retry 1 --retry-delay 5 \
+  -H "Authorization: Bearer {{ vault_rd_api_key }}" \
+  "https://api.real-debrid.com/rest/1.0/user" 2>/dev/null) || {
+  write_failure_metric
+  exit 0
+}
+
+# Validate JSON and extract premium seconds remaining
+PREMIUM=$(echo "$RESPONSE" | jq -r '.premium // empty' 2>/dev/null) || {
+  write_failure_metric
+  exit 0
+}
+
+# Guard against empty/non-numeric values
+if ! [[ "$PREMIUM" =~ ^[0-9]+$ ]]; then
+  write_failure_metric
+  exit 0
+fi
+
+DAYS_REMAINING=$(( PREMIUM / 86400 ))
+
+cat > "${TMPFILE}" <<EOF
+# HELP rd_account_days_remaining Days until Real-Debrid account expires
+# TYPE rd_account_days_remaining gauge
+rd_account_days_remaining $DAYS_REMAINING
+# HELP rd_account_expiry_check_ok Whether the last RD API check succeeded (1=ok, 0=fail)
+# TYPE rd_account_expiry_check_ok gauge
+rd_account_expiry_check_ok 1
+EOF
+mv "${TMPFILE}" "${PROM_FILE}"
