@@ -520,6 +520,59 @@
         cmd: /opt/media-stack/fuse-check.sh
       changed_when: false
 
+    # ── Jellyfin Prometheus metrics ──────────────────────
+    # Jellyfin exposes /metrics (Prometheus format) when EnableMetrics
+    # is set to true in its server configuration. This is a built-in
+    # feature, not a separate plugin. The Alloy config already scrapes
+    # 127.0.0.1:8096/metrics — these tasks ensure the endpoint is active.
+    #
+    # API reference:
+    #   GET  /System/Configuration  → returns ServerConfiguration JSON
+    #   POST /System/Configuration  → updates ServerConfiguration
+    #   Auth: X-Emby-Token header with API key
+    #   GET  /Plugins               → list installed plugins (unused here;
+    #                                  /metrics is a core feature)
+
+    - name: Wait for Jellyfin API to be ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8096/System/Info/Public"
+        method: GET
+        status_code: 200
+      register: jellyfin_health
+      until: jellyfin_health.status == 200
+      retries: 30
+      delay: 5
+
+    - name: Get Jellyfin server configuration
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8096/System/Configuration"
+        method: GET
+        headers:
+          X-Emby-Token: "{{ vault_jellyfin_api_key }}"
+        return_content: true
+        status_code: 200
+      register: jellyfin_config
+
+    - name: Enable Jellyfin Prometheus metrics endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8096/System/Configuration"
+        method: POST
+        headers:
+          X-Emby-Token: "{{ vault_jellyfin_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body: "{{ jellyfin_config.json | combine({'EnableMetrics': true}) }}"
+        status_code: [200, 204]
+      when: not (jellyfin_config.json.EnableMetrics | default(false))
+      register: jellyfin_metrics_enabled
+
+    - name: Restart Jellyfin container to activate metrics
+      ansible.builtin.command:
+        cmd: docker compose restart jellyfin
+        chdir: /opt/media-stack
+      when: jellyfin_metrics_enabled is changed
+      changed_when: true
+
   handlers:
     - name: daemon reload
       ansible.builtin.systemd:
