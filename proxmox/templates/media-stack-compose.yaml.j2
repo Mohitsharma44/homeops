@@ -187,6 +187,8 @@ services:
       - "8000:8000"
     volumes:
       - /opt/media-stack/config/tunarr:/config
+      - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/symlinks:/mnt/symlinks
     networks:
       - media-net
     depends_on:

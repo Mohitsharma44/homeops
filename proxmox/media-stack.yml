@@ -170,6 +170,34 @@
         create_home: false
         state: present
 
+    # ── Mount propagation for Docker FUSE ──────────────
+    - name: Deploy make-rshared systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/make-rshared.service
+        content: |
+          [Unit]
+          Description=Set root mount to rshared for Docker FUSE propagation
+          Before=docker.service
+          After=local-fs.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/bin/mount --make-rshared /
+          RemainAfterExit=yes
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: "0644"
+      notify: daemon reload
+
+    - name: Enable make-rshared service
+      ansible.builtin.systemd:
+        name: make-rshared
+        enabled: yes
+        state: started
+
     # ── Docker CE installation ────────────────────────
     - name: Ensure keyrings directory exists
       ansible.builtin.file:
@@ -314,3 +342,8 @@
         chdir: /opt/media-stack
       changed_when: false
       when: not (compose_changed.changed or env_changed.changed or decypharr_config_changed.changed)
+
+  handlers:
+    - name: daemon reload
+      ansible.builtin.systemd:
+        daemon_reload: yes

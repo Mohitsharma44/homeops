@@ -17,7 +17,12 @@
     "type": "rclone",
     "mount_path": "/mnt/debrid",
     "rclone": {
-      "vfs_read_ahead": "256M"
+      "vfs_read_ahead": "256M",
+      "vfs_cache_mode": "full",
+      "vfs_cache_max_size": "50G",
+      "vfs_cache_max_age": "24h",
+      "buffer_size": "64M",
+      "read_chunk_size": "64M"
     }
   },
   "qbittorrent": {
