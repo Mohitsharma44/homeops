@@ -203,7 +203,65 @@ In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all infrastructure
 Data is pushed to the K8s observability stack via the external write endpoints below. All infrastructure host metrics include `source="infra"` and `instance=<hostname>` labels for filtering in Grafana.
 
 **Komodo-managed Alloy** (5 LAN hosts + VPS): `docker/stacks/shared/alloy/compose.yaml`, credentials in `docker/stacks/shared/alloy/.sops.env`
-**Systemd Alloy** (server04, pve, truenas): `/etc/alloy/config.alloy`, credentials in `/etc/alloy/env`. These hosts also run smartctl_exporter and ship journal logs.
+**Systemd Alloy** (server04, pve, truenas): These hosts run smartctl_exporter and ship journal logs. server04 and pve use `/etc/alloy/config.alloy` with credentials in `/etc/alloy/env`. truenas uses persistent ZFS storage at `/mnt/ssdpool1/admin/` (Alloy v1.14.0) with a Post Init Script that survives OS upgrades — see `docs/hardware-monitoring-plan.md` for details.
+
+## Media Stack Monitoring (LXC 400)
+
+Grafana Alloy runs as a systemd service on LXC 400 (192.168.11.40), collecting host metrics, container metrics, application metrics, container logs, and journal logs. Data is remote-written to the K8s Prometheus and Loki via the external write endpoints below.
+
+```
+LXC 400 (192.168.11.40)
+  │
+  ├─ Alloy (systemd)
+  │    ├─ node_exporter (embedded)        → host metrics
+  │    ├─ cAdvisor (Docker, :8080)        → container metrics
+  │    ├─ Scraparr (Docker, :9999)        → *arr app metrics
+  │    ├─ Jellyfin (:8096/metrics)        → playback/transcode metrics
+  │    ├─ Docker container logs            → Loki push
+  │    └─ journald logs                    → Loki push
+  │
+  │  remote-write (HTTPS, basic auth)
+  ▼
+  Prometheus + Loki (K8s monitoring namespace)
+```
+
+### Components
+
+| Component | Type | Purpose |
+|-----------|------|---------|
+| Alloy | systemd service | Collection agent — scrapes targets, ships logs |
+| cAdvisor | Docker container (:8080) | Per-container CPU/memory/network/disk metrics |
+| Scraparr | Docker container (:9999) | Exports Radarr/Sonarr/Prowlarr queue and library metrics |
+| Jellystat + PostgreSQL | Docker containers (:3000) | Jellyfin playback analytics (standalone UI, not scraped) |
+
+### Real-Debrid Health Checks
+
+Two cron-based textfile collector scripts expose custom metrics via Alloy:
+
+- **`/opt/media-stack/rd-expiry-check.sh`** (daily, 03:00): checks RD account expiry, writes `rd_account_days_remaining` to textfile
+- **`/opt/media-stack/fuse-check.sh`** (every 5 min): validates rclone FUSE mount at `/mnt/debrid`, writes `rd_fuse_mount_healthy` to textfile
+
+Textfile metrics directory: `/var/lib/alloy/textfile/`
+
+### Disk Safety
+
+- WAL: `max_segment_age = 1h` (flush even during network outages)
+- Alloy systemd unit: `MemoryMax=512M` (prevent OOM on a 16GB LXC)
+- Docker daemon: log rotation (`max-size: 10m`, `max-file: 3`)
+
+### Alerts
+
+**9 rules** in the **Media Stack** Grafana Alerting folder. Runbook: `docs/runbooks/media-stack-alerts.md`
+
+### Dashboard
+
+Grafana dashboard UID: `media-stack-health`
+
+### Deployment
+
+```bash
+ansible-playbook proxmox/media-stack.yml   # Play 4 handles monitoring
+```
 
 ## External Write Endpoints
 

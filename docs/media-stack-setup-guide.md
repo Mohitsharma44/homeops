@@ -170,6 +170,39 @@ ansible-playbook proxmox/media-stack.yml --limit media-stack
 ssh root@192.168.11.40 "systemctl is-enabled make-rshared"
 ```
 
+## Monitoring
+
+### Jellystat (Playback Analytics)
+
+Standalone UI at `http://192.168.11.40:3000` — Jellyfin playback history, user stats, library analytics. Backed by a dedicated PostgreSQL container.
+
+### Grafana Dashboard
+
+Dashboard UID: `media-stack-health` — container health, *arr queue depth, RD account expiry, FUSE mount status, transcode activity.
+
+### Alloy (Metrics + Logs Agent)
+
+```bash
+# Check status
+ssh root@192.168.11.40 "systemctl status alloy"
+
+# Restart after config changes
+ssh root@192.168.11.40 "systemctl restart alloy"
+```
+
+### Cron Jobs
+
+| Script | Schedule | Purpose |
+|--------|----------|---------|
+| `/opt/media-stack/rd-expiry-check.sh` | Daily 03:00 | Check RD account expiry days |
+| `/opt/media-stack/fuse-check.sh` | Every 5 min | Validate rclone FUSE mount at `/mnt/debrid` |
+
+Textfile metrics written to `/var/lib/alloy/textfile/` and scraped by Alloy.
+
+### Alerts
+
+9 alert rules in the **Media Stack** Grafana Alerting folder. Runbook: `docs/runbooks/media-stack-alerts.md`
+
 ## URLs
 
 | Service | URL | Audience |
