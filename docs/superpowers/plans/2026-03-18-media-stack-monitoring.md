@@ -104,7 +104,14 @@ Also add a handler to the `handlers:` section:
         state: restarted
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+1. Validate the JSON template is valid: `python3 -c "import json; json.load(open('proxmox/templates/media-stack-docker-daemon.json.j2'))"`
+2. Verify playbook syntax: `ansible-playbook proxmox/media-stack.yml --syntax-check`
+3. Confirm the new tasks appear in the right position in Play 3 (after Docker start, before deploy configs)
+4. Confirm the `restart docker` handler is in Play 3's `handlers:` block (not Play 4's)
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add proxmox/templates/media-stack-docker-daemon.json.j2 proxmox/media-stack.yml
@@ -252,7 +259,17 @@ In `proxmox/media-stack.yml` Play 3, add `jellystat-db` to the directory creatio
         - jellystat-db   # <-- add this
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify**
+
+1. Validate compose template renders valid YAML (no Jinja2 syntax errors): `python3 -c "import yaml; print('OK')"` after checking for balanced braces and correct indentation
+2. Confirm no `env_file` directive on scraparr service (only `environment` with `${VAR}` substitution)
+3. Confirm all 4 new services have `logging:` blocks with `max-size: "10m"` and `max-file: "3"`
+4. Confirm `jellystat-db` is in the directory creation loop in media-stack.yml
+5. Confirm cAdvisor and Scraparr ports are bound to `127.0.0.1` (not `0.0.0.0`)
+6. Confirm Jellystat port 3000 is NOT bound to `127.0.0.1` (needs LAN access for standalone UI)
+7. Verify playbook syntax: `ansible-playbook proxmox/media-stack.yml --syntax-check`
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add proxmox/templates/media-stack-compose.yaml.j2 proxmox/templates/media-stack-env.j2 proxmox/media-stack.yml
@@ -302,7 +319,21 @@ EnvironmentFile=/etc/alloy/env
 MemoryMax=512M
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify**
+
+1. Verify the River config contains all required blocks by grepping for key patterns:
+   - `grep 'textfile_directory' proxmox/templates/media-stack-alloy.config.j2` → must find `/var/lib/alloy/textfile`
+   - `grep 'max_segment_age' proxmox/templates/media-stack-alloy.config.j2` → must find `1h` (disk safety)
+   - `grep 'MemoryMax' proxmox/templates/media-stack-alloy-override.conf.j2` → must find `512M`
+   - `grep '127.0.0.1:8080' proxmox/templates/media-stack-alloy.config.j2` → cAdvisor scrape
+   - `grep '127.0.0.1:7100' proxmox/templates/media-stack-alloy.config.j2` → Scraparr scrape
+   - `grep '127.0.0.1:8096' proxmox/templates/media-stack-alloy.config.j2` → Jellyfin scrape
+   - `grep 'instance.*media-stack' proxmox/templates/media-stack-alloy.config.j2` → instance label
+   - `grep 'source.*infra' proxmox/templates/media-stack-alloy.config.j2` → external label
+2. Verify env template has all 4 variables: `PROMETHEUS_URL`, `LOKI_URL`, `BASIC_AUTH_USERNAME`, `BASIC_AUTH_PASSWORD`
+3. Verify override template has both `EnvironmentFile` and `MemoryMax`
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add proxmox/templates/media-stack-alloy.config.j2 proxmox/templates/media-stack-alloy-env.j2 proxmox/templates/media-stack-alloy-override.conf.j2
@@ -332,7 +363,21 @@ Create `proxmox/templates/media-stack-rd-expiry-check.sh.j2` — copy the full r
 
 Create `proxmox/templates/media-stack-fuse-check.sh.j2` — copy from the spec's "FUSE Mount Health Check" section. Uses `mountpoint -q` + `ls` to test mount health, writes `rd_fuse_mount_healthy` gauge.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+1. RD expiry script robustness checks:
+   - `grep 'set -euo pipefail' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → must exist
+   - `grep 'premium' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → uses premium field, NOT expiration
+   - `grep '\.tmp' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → atomic write via tmpfile
+   - `grep 'max-time' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → curl timeout
+   - `grep 'write_failure_metric' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → error handler function
+   - `grep '\^[0-9]' proxmox/templates/media-stack-rd-expiry-check.sh.j2` → numeric regex guard
+2. FUSE check script:
+   - `grep 'mountpoint' proxmox/templates/media-stack-fuse-check.sh.j2` → mount probe
+   - `grep 'rd_fuse_mount_healthy' proxmox/templates/media-stack-fuse-check.sh.j2` → correct metric name
+3. Both scripts must be valid bash: `bash -n proxmox/templates/media-stack-rd-expiry-check.sh.j2` and `bash -n proxmox/templates/media-stack-fuse-check.sh.j2` (will warn on Jinja2 vars but should not have syntax errors)
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add proxmox/templates/media-stack-rd-expiry-check.sh.j2 proxmox/templates/media-stack-fuse-check.sh.j2
@@ -526,7 +571,17 @@ ansible-playbook proxmox/media-stack.yml --syntax-check
 
 Expected: `playbook: proxmox/media-stack.yml` (no errors)
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+1. Playbook syntax: `ansible-playbook proxmox/media-stack.yml --syntax-check` → must pass
+2. Verify Play 4 exists as a separate play (not nested inside Play 3): `grep -c '^- name:' proxmox/media-stack.yml` → should be 4 plays
+3. Verify Play 4 targets `media-stack` host: `grep 'hosts: media-stack' proxmox/media-stack.yml`
+4. Verify all handlers are defined: `grep -A1 'handlers:' proxmox/media-stack.yml` → should show `daemon reload` and `restart alloy` in Play 4's handlers
+5. Verify cron jobs are present: `grep 'ansible.builtin.cron' proxmox/media-stack.yml` → should find 2 cron tasks
+6. Verify initial seed runs: `grep 'seed initial metric' proxmox/media-stack.yml` → should find 2 tasks (RD expiry + FUSE)
+7. Verify Alloy user group membership: `grep 'systemd-journal,docker' proxmox/media-stack.yml` → must exist
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add proxmox/media-stack.yml
@@ -583,7 +638,15 @@ Add to Play 4 in `proxmox/media-stack.yml`, after the FUSE mount check tasks:
       when: plugin_install is changed
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+1. Playbook syntax: `ansible-playbook proxmox/media-stack.yml --syntax-check` → must pass
+2. Verify the Jellyfin plugin tasks use header-based auth (`X-Emby-Token`) rather than query parameter auth, per the spec
+3. Verify the plugin install task has a `when:` condition for idempotency
+4. Verify the Jellyfin restart is conditional (`when: plugin_install is changed`)
+5. Verify `jellyfin_prometheus_plugin_guid` is defined as a variable (either in Play 4 vars or in host_vars)
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add proxmox/media-stack.yml
@@ -679,7 +742,16 @@ python3 -c "import yaml; yaml.safe_load(open('kubernetes/apps/argocd-apps/apps/k
 
 Expected: No errors
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify**
+
+1. YAML valid: `python3 -c "import yaml; yaml.safe_load(open('kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml'))"` → no errors
+2. Count rules: `grep -c 'uid: ' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` → should increase by 9 compared to before this task
+3. Verify all 9 rule UIDs exist: `grep -E 'uid: (media-container-down|media-container-restart|rd-account-expir|rd-expiry-check|rd-fuse-mount|jellyfin-transcoding|decypharr-rd-api|media-stack-disk)' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` → 9 matches
+4. Verify all rules have `runbook_url` annotation: `grep 'runbook_url' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml | grep media-stack` → 9 matches
+5. Verify LogQL rules use Loki datasource: `grep -B5 'jellyfin-transcoding-errors' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` → should reference loki datasource, not thanos
+6. Verify folder name: `grep 'folder: Media Stack' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` → must exist
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml
@@ -724,7 +796,14 @@ Alerts to document:
 8. DecypharrRdApiErrors — check Decypharr logs, check RD status page, check API key
 9. MediaStackDiskUsage — check disk with `df -h`, prune Docker images, check log rotation
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify**
+
+1. All 9 alerts documented: `grep -c '^## ' docs/runbooks/media-stack-alerts.md` → at least 9 (plus any header sections)
+2. Each alert section has required subsections: `grep -c 'Triage:' docs/runbooks/media-stack-alerts.md` → 9
+3. SSH command present: `grep 'ssh root@192.168.11.40' docs/runbooks/media-stack-alerts.md` → at least 7 (RD renewal alerts may not need SSH)
+4. Section anchors match what's referenced in alert rule `runbook_url` annotations (case-sensitive check)
+
+- [ ] **Step 3: Commit**
 
 ```bash
 git add docs/runbooks/media-stack-alerts.md
@@ -766,7 +845,14 @@ Add the dashboard JSON to `kube-prometheus-stack.yaml` following the existing pa
 python3 -c "import yaml; yaml.safe_load(open('kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml'))"
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Verify**
+
+1. YAML valid: `python3 -c "import yaml; yaml.safe_load(open('kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml'))"` → no errors
+2. Dashboard UID present: `grep 'media-stack-health' kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` → must exist
+3. Dashboard has all 6 panel sections (Container Health, Arr Queue, Jellyfin Streams, RD Health, LXC Resources, Logs)
+4. All panels filter on `instance="media-stack"` to scope to this LXC only
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml
@@ -913,7 +999,14 @@ Add a "Monitoring" section to the setup guide with:
 - Alloy systemd commands
 - Cron job locations
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Verify**
+
+1. `grep -i 'alloy' docs/monitoring.md | grep -i media` → media-stack Alloy section exists
+2. `grep 'Jellystat' docs/media-stack-setup-guide.md` → Jellystat mentioned in setup guide
+3. `grep '3000' docs/media-stack-setup-guide.md` → Jellystat port documented
+4. No broken markdown links or formatting issues
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add docs/monitoring.md docs/media-stack-setup-guide.md
