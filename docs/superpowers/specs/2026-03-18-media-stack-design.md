@@ -15,7 +15,7 @@ Self-hosted media server as an alternative to commercial streaming platforms (Ne
 | pve03 (192.168.11.12)                                         |
 |                                                               |
 |  +----------------------------------------------------------+ |
-|  | LXC 300: media-stack (192.168.11.30)                     | |
+|  | LXC 400: media-stack (192.168.11.40)                     | |
 |  | Debian 13 (Trixie), privileged, nesting+fuse             | |
 |  | 4 cores, 16GB RAM, 2GB swap, 64GB root disk              | |
 |  | GPU: /dev/dri (Radeon 760M VAAPI)                        | |
@@ -136,10 +136,10 @@ For permanently keeping a title independent of Real-Debrid:
 
 | Setting | Value |
 |---------|-------|
-| ID | 300 |
+| ID | 400 |
 | Hostname | `media-stack` |
 | OS | Debian 13 (Trixie) — verify template availability: `pveam available --section system \| grep debian-13`. Fallback to Debian 12 if unavailable. |
-| IP | 192.168.11.30/24 (static, gateway 192.168.11.1) |
+| IP | 192.168.11.40/24 (static, gateway 192.168.11.1) |
 | Cores | 4 |
 | RAM | 16GB |
 | Swap | 2GB |
@@ -226,7 +226,7 @@ The NFS dataset on r720xd must have matching ownership (`chown 1100:1100`). Sinc
 
 ### Backup Strategy
 
-- **LXC root disk** (configs, databases): Covered by existing Sanoid config in `pve03.yml` — `rpool` recursive snapshots include `rpool/data/subvol-300-disk-0`
+- **LXC root disk** (configs, databases): Covered by existing Sanoid config in `pve03.yml` — `rpool` recursive snapshots include `rpool/data/subvol-400-disk-0`
 - **NFS media dataset** (`pool0/media` on r720xd): Add to `sanoid_datasets` in `host_vars/r720xd.yml` with `data_retention` template
 
 ## Quality Profiles
@@ -281,7 +281,7 @@ Encrypted with age key `age1y6dnshya496nf3072zudw3vd33723v02g3tfvpt563zng0xd9ghq
 `JELLYFIN_API_KEY` cannot be known until Jellyfin is running. Deployment order:
 
 1. **Initial deploy**: Run `docker compose up -d` with all services. SuggestArr and Tunarr will start but fail to connect to Jellyfin (expected).
-2. **Configure Jellyfin**: Access web UI at `192.168.11.30:8096`, complete setup wizard, create admin user, generate API key from Dashboard > API Keys.
+2. **Configure Jellyfin**: Access web UI at `192.168.11.40:8096`, complete setup wizard, create admin user, generate API key from Dashboard > API Keys.
 3. **Store API key**: Add `JELLYFIN_API_KEY` to SOPS-encrypted secrets, re-run Ansible to redeploy `.env`.
 4. **Restart dependents**: `docker compose restart suggestarr tunarr` — they now connect to Jellyfin.
 
@@ -341,12 +341,12 @@ all:
       ansible_user: root
       ansible_python_interpreter: /usr/bin/python3
     media-stack:
-      ansible_host: 192.168.11.30
+      ansible_host: 192.168.11.40
       ansible_user: root
       ansible_python_interpreter: /usr/bin/python3
 ```
 
-Play 1 creates the LXC with static IP 192.168.11.30 and injects pve03's root SSH public key. Play 2 then connects via SSH to the LXC directly.
+Play 1 creates the LXC with static IP 192.168.11.40 and injects pve03's root SSH public key. Play 2 then connects via SSH to the LXC directly.
 
 ### Playbook Flow
 
@@ -355,16 +355,16 @@ media-stack.yml
 
   Play 1: Target pve03 (hypervisor)
     - Download Debian 13 LXC template if not present
-    - Create LXC 300 via community.general.proxmox module
+    - Create LXC 400 via community.general.proxmox module
       - Privileged, nesting, fuse
       - 4 cores, 16GB RAM, 2GB swap, 64GB disk
-      - Static IP: 192.168.11.30/24, gateway 192.168.11.1
+      - Static IP: 192.168.11.40/24, gateway 192.168.11.1
       - Inject SSH pubkey for root access
     - Configure LXC conf (GPU + FUSE device passthrough)
     - Start LXC
-    - Wait for SSH to become available on 192.168.11.30
+    - Wait for SSH to become available on 192.168.11.40
 
-  Play 2: Target media-stack LXC (192.168.11.30 via SSH)
+  Play 2: Target media-stack LXC (192.168.11.40 via SSH)
     - Install Docker CE + docker compose plugin (official Docker apt repo)
     - Create media user/group (UID/GID 1100)
     - Install NFS client (nfs-common), create /mnt/local-media, configure /etc/fstab
@@ -407,18 +407,18 @@ All services on `media-net` bridge network, communicate by container name.
 
 ### External Access
 
-During initial deployment, services are accessible directly at `192.168.11.30:<port>` from the local network. Subdomain-based ingress is deferred to a follow-up task.
+During initial deployment, services are accessible directly at `192.168.11.40:<port>` from the local network. Subdomain-based ingress is deferred to a follow-up task.
 
 | Service | Direct Access | Future Subdomain | Audience |
 |---------|--------------|-------------------|----------|
-| Jellyfin | `192.168.11.30:8096` | `jellyfin.sharmamohit.com` | All users |
-| Jellyseerr | `192.168.11.30:5055` | `requests.sharmamohit.com` | All users |
-| Radarr | `192.168.11.30:7878` | `radarr.sharmamohit.com` | Admin only |
-| Sonarr | `192.168.11.30:8989` | `sonarr.sharmamohit.com` | Admin only |
-| Prowlarr | `192.168.11.30:9696` | `prowlarr.sharmamohit.com` | Admin only |
-| Bazarr | `192.168.11.30:6767` | `bazarr.sharmamohit.com` | Admin only |
-| Decypharr | `192.168.11.30:8282` | `decypharr.sharmamohit.com` | Admin only |
-| Profilarr | `192.168.11.30:6868` | `profilarr.sharmamohit.com` | Admin only |
+| Jellyfin | `192.168.11.40:8096` | `jellyfin.sharmamohit.com` | All users |
+| Jellyseerr | `192.168.11.40:5055` | `requests.sharmamohit.com` | All users |
+| Radarr | `192.168.11.40:7878` | `radarr.sharmamohit.com` | Admin only |
+| Sonarr | `192.168.11.40:8989` | `sonarr.sharmamohit.com` | Admin only |
+| Prowlarr | `192.168.11.40:9696` | `prowlarr.sharmamohit.com` | Admin only |
+| Bazarr | `192.168.11.40:6767` | `bazarr.sharmamohit.com` | Admin only |
+| Decypharr | `192.168.11.40:8282` | `decypharr.sharmamohit.com` | Admin only |
+| Profilarr | `192.168.11.40:6868` | `profilarr.sharmamohit.com` | Admin only |
 
 ## Anti-Abuse: Real-Debrid Ban Prevention
 
