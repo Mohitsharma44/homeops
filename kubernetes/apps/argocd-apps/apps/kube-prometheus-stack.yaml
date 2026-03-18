@@ -852,6 +852,332 @@ spec:
                         severity: none
                       annotations:
                         summary: "Grafana Alerting is alive"
+                - orgId: 1
+                  name: media-stack
+                  folder: Media Stack
+                  interval: 60s
+                  rules:
+                    - uid: media-container-down
+                      title: MediaContainerDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'absent(container_last_seen{name=~"decypharr|jellyfin|radarr|sonarr|prowlarr", instance="media-stack"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'One or more media stack containers (decypharr, jellyfin, radarr, sonarr, prowlarr) are not running'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
+                    - uid: media-container-restart-loop
+                      title: MediaContainerRestartLoop
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 3600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'increase(container_restart_count{instance="media-stack"}[1h])'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [3]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Media stack container {{ "{{" }} $labels.name {{ "}}" }} has restarted more than 3 times in the last hour'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerrestartloop'
+                    - uid: rd-account-expiring-soon
+                      title: RdAccountExpiringSoon
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'rd_account_days_remaining'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [15]
+                            refId: C
+                      for: 1h
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Real-Debrid account expires in {{ "{{" }} $values.B {{ "}}" }} days'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#rdaccountexpiringsoon'
+                    - uid: rd-account-expiry-critical
+                      title: RdAccountExpiryCritical
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'rd_account_days_remaining'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [5]
+                            refId: C
+                      for: 30m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Real-Debrid account expires in {{ "{{" }} $values.B {{ "}}" }} days — renew immediately'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#rdaccountexpirycritical'
+                    - uid: rd-expiry-check-failed
+                      title: RdExpiryCheckFailed
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'rd_account_expiry_check_ok'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 6h
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Real-Debrid account expiry check has been failing'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#rdexpirycheckfailed'
+                    - uid: rd-fuse-mount-down
+                      title: RdFuseMountDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'rd_fuse_mount_healthy'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 10m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Real-Debrid FUSE mount is unhealthy — media files may be inaccessible'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#rdfusemountdown'
+                    - uid: media-stack-disk-usage
+                      title: MediaStackDiskUsage
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: '(1 - node_filesystem_avail_bytes{instance="media-stack",mountpoint="/"} / node_filesystem_size_bytes{instance="media-stack",mountpoint="/"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.85]
+                            refId: C
+                      for: 15m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Media stack host disk usage is above 85%'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediastackdiskusage'
+                    - uid: jellyfin-transcoding-errors
+                      title: JellyfinTranscodingErrors
+                      condition: B
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 900
+                            to: 0
+                          datasourceUid: loki
+                          model:
+                            expr: 'count_over_time({container="jellyfin", instance="media-stack"} |~ "transcode.*error|ffmpeg.*error"[15m])'
+                            queryType: range
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: A
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [5]
+                            refId: B
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Jellyfin has encountered more than 5 transcoding/ffmpeg errors in the last 15 minutes'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#jellyfintranscodingerrors'
+                    - uid: decypharr-rd-api-errors
+                      title: DecypharrRdApiErrors
+                      condition: B
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 900
+                            to: 0
+                          datasourceUid: loki
+                          model:
+                            expr: 'count_over_time({container="decypharr", instance="media-stack"} |~ "error|rate.limit|429"[15m])'
+                            queryType: range
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: A
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [10]
+                            refId: B
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Decypharr has encountered more than 10 Real-Debrid API errors or rate limits in the last 15 minutes'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#decypharrrdapierrors'
         alertmanager:
           config:
             global:
