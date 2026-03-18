@@ -68,7 +68,7 @@ Ansible tasks (idempotent):
 3. Template config.alloy and env file
 4. `usermod -aG systemd-journal,docker alloy`
 5. Create `/var/lib/alloy/textfile/` directory
-6. Deploy systemd override
+6. Deploy systemd override (EnvironmentFile + `MemoryMax=512M`)
 7. Enable + start Alloy (handler restarts on config change)
 
 ### Alloy River Config
@@ -226,8 +226,49 @@ loki.write "loki" {
       password = sys.env("BASIC_AUTH_PASSWORD")
     }
   }
+  wal {
+    max_segment_age = "1h"
+  }
 }
 ```
+
+### Alloy Disk Safety
+
+If Loki is unreachable, Alloy buffers logs in its WAL (Write-Ahead Log) at `/var/lib/alloy/data/`. On a 256GB LXC root disk shared with app configs and Docker images, unbounded WAL growth could fill the disk and crash everything.
+
+**Protections (deployed via Ansible):**
+
+1. **WAL segment age limit:** `max_segment_age = "1h"` in `loki.write` — Alloy drops WAL segments older than 1 hour if they can't be flushed. Limits WAL size to roughly 1 hour of log volume.
+
+2. **Alloy systemd memory limit:** `MemoryMax=512M` in the systemd override — prevents Alloy from consuming excessive RAM if it's buffering aggressively.
+
+3. **Alloy data directory cleanup:** The Alloy systemd override sets `StateDirectory=alloy` which maps to `/var/lib/alloy/`. If Alloy is restarted, stale WAL data is replayed and flushed (or aged out).
+
+The combination ensures that even if Loki is down for hours, Alloy will buffer up to ~1 hour of logs, then drop older segments rather than filling the disk.
+
+### Docker Daemon Log Rotation
+
+The existing media-stack containers have **no log rotation configured** — neither per-container in the compose template nor at the Docker daemon level. With 15+ containers, unrotated JSON logs can fill the disk.
+
+**Fix:** Configure Docker daemon-level defaults via `/etc/docker/daemon.json` (deployed by Ansible):
+
+```json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+```
+
+This applies to **all containers** on the LXC as a default — no need to add `logging:` blocks to every service in the compose template. Per-container overrides in the compose file take precedence if needed.
+
+**Ansible tasks:**
+1. Template `/etc/docker/daemon.json` with log rotation defaults
+2. Restart Docker daemon (handler, only when `daemon.json` changes)
+
+**Note:** The monitoring containers (cAdvisor, Scraparr, Jellystat) in the compose template still have explicit `logging:` blocks as a defense-in-depth measure, but the daemon-level config is the primary safeguard for all 15+ containers.
 
 ### cAdvisor Container
 
@@ -380,34 +421,58 @@ jellystat:
 
 Daily cron job at 03:00, single RD API call per day. Deployed via Ansible.
 
+**API endpoint:** `GET https://api.real-debrid.com/rest/1.0/user` with `Authorization: Bearer <token>`. Returns JSON with a `premium` field (integer, seconds remaining as premium). We use `premium` instead of `expiration` because the `expiration` field has a known timezone bug — RD sends local time formatted with a UTC `Z` suffix. The `premium` field is an unambiguous integer: `days_remaining = premium / 86400`.
+
+**Rate limit:** 250 requests/minute (our once-daily call is well within this).
+
 **Script** (`proxmox/templates/media-stack-rd-expiry-check.sh.j2`):
 
 ```bash
 #!/bin/bash
+set -euo pipefail
 # Queries Real-Debrid /user API, calculates days until expiry,
 # writes Prometheus textfile metric for Alloy to pick up.
 # Runs once daily at 03:00 via cron. Single API call per run.
+#
+# Uses the "premium" field (seconds remaining) instead of "expiration"
+# because the expiration field has a known timezone bug in the RD API.
 
 TEXTFILE_DIR="/var/lib/alloy/textfile"
+PROM_FILE="${TEXTFILE_DIR}/rd_expiry.prom"
+TMPFILE="${PROM_FILE}.tmp"
 
-RESPONSE=$(curl -sf -H "Authorization: Bearer {{ vault_rd_api_key }}" \
-  "https://api.real-debrid.com/rest/1.0/user")
-
-if [ $? -ne 0 ]; then
-  cat > "${TEXTFILE_DIR}/rd_expiry.prom" <<EOF
+write_failure_metric() {
+  cat > "${TMPFILE}" <<EOF
 # HELP rd_account_expiry_check_ok Whether the last RD API check succeeded (1=ok, 0=fail)
 # TYPE rd_account_expiry_check_ok gauge
 rd_account_expiry_check_ok 0
 EOF
+  mv "${TMPFILE}" "${PROM_FILE}"
+}
+
+# Timeout after 30s, retry once on transient failure
+RESPONSE=$(curl -sf --max-time 30 --retry 1 --retry-delay 5 \
+  -H "Authorization: Bearer {{ vault_rd_api_key }}" \
+  "https://api.real-debrid.com/rest/1.0/user" 2>/dev/null) || {
+  write_failure_metric
+  exit 0
+}
+
+# Validate JSON and extract premium seconds remaining
+PREMIUM=$(echo "$RESPONSE" | jq -r '.premium // empty' 2>/dev/null) || {
+  write_failure_metric
+  exit 0
+}
+
+# Guard against empty/non-numeric values
+if ! [[ "$PREMIUM" =~ ^[0-9]+$ ]]; then
+  write_failure_metric
   exit 0
 fi
 
-EXPIRY=$(echo "$RESPONSE" | jq -r '.expiration')
-EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s)
-NOW_EPOCH=$(date +%s)
-DAYS_REMAINING=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
+DAYS_REMAINING=$(( PREMIUM / 86400 ))
 
-cat > "${TEXTFILE_DIR}/rd_expiry.prom" <<EOF
+cat > "${TMPFILE}" <<EOF
 # HELP rd_account_days_remaining Days until Real-Debrid account expires
 # TYPE rd_account_days_remaining gauge
 rd_account_days_remaining $DAYS_REMAINING
@@ -415,7 +480,16 @@ rd_account_days_remaining $DAYS_REMAINING
 # TYPE rd_account_expiry_check_ok gauge
 rd_account_expiry_check_ok 1
 EOF
+mv "${TMPFILE}" "${PROM_FILE}"
 ```
+
+**Robustness features:**
+- `set -euo pipefail` — fail on unset variables and pipe errors
+- Atomic write via temp file + `mv` — Alloy never reads a half-written `.prom` file
+- `curl --max-time 30 --retry 1` — timeout and single retry on transient failure
+- `jq` validates JSON and extracts `premium` with `// empty` fallback
+- Regex guard on numeric value — non-numeric `premium` writes failure metric instead of crashing
+- All error paths write `rd_account_expiry_check_ok 0` so the alert fires on script failure
 
 Ansible tasks:
 1. Install `jq` and `curl` (apt)
@@ -531,6 +605,7 @@ New secrets to add to `proxmox/group_vars/all/secrets.sops.yml`:
 | `proxmox/templates/media-stack-alloy-env.j2` | Alloy credentials env file |
 | `proxmox/templates/media-stack-rd-expiry-check.sh.j2` | RD expiry cron script |
 | `proxmox/templates/media-stack-fuse-check.sh.j2` | FUSE mount health cron script |
+| `proxmox/templates/media-stack-docker-daemon.json.j2` | Docker daemon log rotation config |
 | `docs/runbooks/media-stack-alerts.md` | Alert runbook |
 
 ### Modified Files
@@ -539,7 +614,7 @@ New secrets to add to `proxmox/group_vars/all/secrets.sops.yml`:
 |------|---------|
 | `proxmox/templates/media-stack-compose.yaml.j2` | Add cAdvisor, Scraparr, Jellystat, Jellystat-DB |
 | `proxmox/templates/media-stack-env.j2` | Add Prowlarr/Bazarr API keys, Jellystat secrets, Alloy credentials |
-| `proxmox/media-stack.yml` | Add Play 4: monitoring setup (Alloy install, cron jobs, Jellyfin plugin) |
+| `proxmox/media-stack.yml` | Add Play 4: monitoring setup (Alloy install, cron jobs, Jellyfin plugin, Docker daemon config) |
 | `proxmox/group_vars/all/secrets.sops.yml` | Add new secrets (user-managed) |
 | `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` | Add Media Stack alert folder + dashboard |
 
