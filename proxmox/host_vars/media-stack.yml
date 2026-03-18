@@ -1,0 +1,14 @@
+---
+# media-stack LXC — guest-side configuration
+# IP: 192.168.11.40, LXC ID: 400 on pve03
+
+# ── Media User ────────────────────────────────────────
+media_stack_puid: 1100
+media_stack_pgid: 1100
+
+# ── NFS ───────────────────────────────────────────────
+media_stack_nfs_server: "192.168.11.15"
+media_stack_nfs_path: "/mnt/pool0/media"
+
+# ── Media Stack IP (used in compose template) ─────────
+media_stack_ip: "192.168.11.40"

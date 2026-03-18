@@ -20,3 +20,18 @@ sanoid_datasets:
   - name: "rpool"
     template: data_retention
     recursive: yes
+
+# ── Media Stack LXC ───────────────────────────────────
+media_stack_vmid: 400
+media_stack_hostname: "media-stack"
+media_stack_ip: "192.168.11.40"
+media_stack_gateway: "192.168.11.1"
+media_stack_nameserver: "192.168.11.1 9.9.9.9"
+media_stack_cores: 4
+media_stack_memory: 16384
+media_stack_swap: 2048
+media_stack_disk_size: 64
+media_stack_storage: "local-zfs"
+media_stack_ostemplate: "local:vztmpl/debian-13-standard_13.0-1_amd64.tar.zst"
+media_stack_puid: 1100
+media_stack_pgid: 1100
