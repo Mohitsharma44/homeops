@@ -366,3 +366,166 @@
       ansible.builtin.systemd:
         name: docker
         state: restarted
+
+# ═══════════════════════════════════════════════════════
+# Play 4: Deploy monitoring (Alloy + cron jobs)
+# Runs on media-stack LXC after Docker stack is up
+# ═══════════════════════════════════════════════════════
+- name: Deploy media-stack monitoring
+  hosts: media-stack
+  become: true
+  gather_facts: true
+
+  tasks:
+    # ── Prerequisites ──────────────────────────────────
+    - name: Install monitoring prerequisites
+      ansible.builtin.apt:
+        name:
+          - jq
+          - curl
+          - apt-transport-https
+          - software-properties-common
+        state: present
+
+    # ── Grafana APT repo + Alloy install ───────────────
+    - name: Ensure keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /tmp/grafana-gpg.key
+        mode: "0644"
+
+    - name: Dearmor and install Grafana GPG key
+      ansible.builtin.command:
+        cmd: gpg --batch --yes --dearmor --output /etc/apt/keyrings/grafana.gpg /tmp/grafana-gpg.key
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Set Grafana keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/grafana.gpg
+        mode: "0644"
+
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        filename: grafana
+        state: present
+        update_cache: yes
+
+    - name: Install Alloy
+      ansible.builtin.apt:
+        name: alloy
+        state: present
+
+    # ── Alloy config deployment ────────────────────────
+    - name: Deploy Alloy River config
+      ansible.builtin.template:
+        src: media-stack-alloy.config.j2
+        dest: /etc/alloy/config.alloy
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart alloy
+
+    - name: Deploy Alloy credentials env file
+      ansible.builtin.template:
+        src: media-stack-alloy-env.j2
+        dest: /etc/alloy/env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: restart alloy
+
+    - name: Create Alloy systemd override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/alloy.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Deploy Alloy systemd override
+      ansible.builtin.template:
+        src: media-stack-alloy-override.conf.j2
+        dest: /etc/systemd/system/alloy.service.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - daemon reload
+        - restart alloy
+
+    - name: Add alloy user to required groups
+      ansible.builtin.user:
+        name: alloy
+        groups: systemd-journal,docker
+        append: yes
+      notify: restart alloy
+
+    - name: Create textfile collector directory
+      ansible.builtin.file:
+        path: /var/lib/alloy/textfile
+        state: directory
+        owner: alloy
+        group: alloy
+        mode: "0755"
+
+    - name: Enable and start Alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: started
+        enabled: yes
+
+    # ── RD expiry check cron ───────────────────────────
+    - name: Deploy RD expiry check script
+      ansible.builtin.template:
+        src: media-stack-rd-expiry-check.sh.j2
+        dest: /opt/media-stack/rd-expiry-check.sh
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Schedule daily RD expiry check (03:00)
+      ansible.builtin.cron:
+        name: "RD account expiry check"
+        hour: "3"
+        minute: "0"
+        job: "/opt/media-stack/rd-expiry-check.sh"
+
+    - name: Run RD expiry check once to seed initial metric
+      ansible.builtin.command:
+        cmd: /opt/media-stack/rd-expiry-check.sh
+      changed_when: false
+
+    # ── FUSE mount health cron ─────────────────────────
+    - name: Deploy FUSE mount check script
+      ansible.builtin.template:
+        src: media-stack-fuse-check.sh.j2
+        dest: /opt/media-stack/fuse-check.sh
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Schedule FUSE mount health check (every 5 min)
+      ansible.builtin.cron:
+        name: "FUSE mount health check"
+        minute: "*/5"
+        job: "/opt/media-stack/fuse-check.sh"
+
+    - name: Run FUSE check once to seed initial metric
+      ansible.builtin.command:
+        cmd: /opt/media-stack/fuse-check.sh
+      changed_when: false
+
+  handlers:
+    - name: daemon reload
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: restart alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: restarted
