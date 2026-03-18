@@ -12,17 +12,34 @@
       ansible.builtin.setup:
 
     # ── Local SSD Pool (R720XD only) ─────────────────
-    - name: Check if local-ssd pool exists
+    - name: Check if local-ssd pool is active
       ansible.builtin.command: zpool list {{ local_ssd_pool.name }}
-      register: local_ssd_pool_check
+      register: local_ssd_pool_active
       changed_when: false
       failed_when: false
       when: local_ssd_pool is defined
 
+    - name: Check if local-ssd pool is importable but not active
+      ansible.builtin.shell: zpool import 2>&1 | grep -q "pool:.*{{ local_ssd_pool.name }}"
+      register: local_ssd_pool_importable
+      changed_when: false
+      failed_when: false
+      when: local_ssd_pool is defined and local_ssd_pool_active.rc != 0
+
+    - name: Import existing local-ssd pool if found
+      ansible.builtin.command: zpool import {{ local_ssd_pool.name }}
+      when: >
+        local_ssd_pool is defined
+        and local_ssd_pool_active.rc != 0
+        and local_ssd_pool_importable.rc == 0
+
     - name: Wipe old partition tables on local-ssd drives
       ansible.builtin.command: sgdisk --zap-all {{ item }}
       loop: "{{ local_ssd_pool.drives }}"
-      when: local_ssd_pool is defined and local_ssd_pool_check.rc != 0
+      when: >
+        local_ssd_pool is defined
+        and local_ssd_pool_active.rc != 0
+        and local_ssd_pool_importable.rc != 0
 
     - name: Create local-ssd ZFS mirror pool
       ansible.builtin.command: >
@@ -36,7 +53,10 @@
         {{ local_ssd_pool.name }}
         {{ local_ssd_pool.vdev }}
         {{ local_ssd_pool.drives | join(' ') }}
-      when: local_ssd_pool is defined and local_ssd_pool_check.rc != 0
+      when: >
+        local_ssd_pool is defined
+        and local_ssd_pool_active.rc != 0
+        and local_ssd_pool_importable.rc != 0
 
   roles:
     - role: lae.proxmox
@@ -198,24 +218,25 @@
         name: smartmontools
         state: present
 
-    - name: Check if smartctl_exporter is already installed
-      ansible.builtin.stat:
-        path: /usr/local/bin/smartctl_exporter
-      register: smartctl_binary
+    - name: Check installed smartctl_exporter version
+      ansible.builtin.shell: /usr/local/bin/smartctl_exporter --version 2>&1 | grep -q "version {{ smartctl_exporter_version }}"
+      register: smartctl_version_match
+      changed_when: false
+      failed_when: false
 
     - name: Download smartctl_exporter
       ansible.builtin.get_url:
         url: "https://github.com/prometheus-community/smartctl_exporter/releases/download/v{{ smartctl_exporter_version }}/smartctl_exporter-{{ smartctl_exporter_version }}.linux-amd64.tar.gz"
         dest: /tmp/smartctl_exporter.tar.gz
         checksum: "sha256:{{ smartctl_exporter_checksum }}"
-      when: not smartctl_binary.stat.exists
+      when: smartctl_version_match.rc != 0
 
     - name: Extract smartctl_exporter
       ansible.builtin.unarchive:
         src: /tmp/smartctl_exporter.tar.gz
         dest: /tmp/
         remote_src: yes
-      when: not smartctl_binary.stat.exists
+      when: smartctl_version_match.rc != 0
 
     - name: Install smartctl_exporter binary
       ansible.builtin.copy:
@@ -225,8 +246,17 @@
         group: root
         mode: "0755"
         remote_src: yes
-      when: not smartctl_binary.stat.exists
+      when: smartctl_version_match.rc != 0
       notify: restart smartctl-exporter
+
+    - name: Clean up smartctl_exporter temp files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /tmp/smartctl_exporter.tar.gz
+        - "/tmp/smartctl_exporter-{{ smartctl_exporter_version }}.linux-amd64"
+      when: smartctl_version_match.rc != 0
 
     - name: Deploy smartctl-exporter systemd service
       ansible.builtin.template:
@@ -244,12 +274,6 @@
         name: smartctl-exporter
         state: started
         enabled: yes
-
-    # ── Cleanup ───────────────────────────────────────
-    - name: Remove smartctl_exporter archive
-      ansible.builtin.file:
-        path: /tmp/smartctl_exporter.tar.gz
-        state: absent
 
   handlers:
     - name: reload nfs exports
