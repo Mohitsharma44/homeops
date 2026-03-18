@@ -1,0 +1,22 @@
+---
+# pve03 — AMD Ryzen 5 8500G Mini PC, 30GB RAM, 1TB NVMe
+# IP: 192.168.11.12
+# Purpose: Media center (Jellyfin, *arr stack)
+
+# ── ZFS ARC ─────────────────────────────────────────
+# 4GB (leaves ~26GB for VMs/LXCs out of 30GB total)
+# rpool only serves OS + VM images, not bulk media
+pve_zfs_options: "zfs_arc_max=4294967296"
+
+# ── Storage Backends ────────────────────────────────
+# rpool/data (local-zfs) already configured by installer
+pve_storages: []
+
+# ── Monitoring ──────────────────────────────────────
+alloy_instance_name: "pve03"
+
+# ── Sanoid ──────────────────────────────────────────
+sanoid_datasets:
+  - name: "rpool"
+    template: data_retention
+    recursive: yes
