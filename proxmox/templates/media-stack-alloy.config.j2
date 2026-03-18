@@ -7,10 +7,12 @@
 // Host metrics (node_exporter)
 // ============================================================
 prometheus.exporter.unix "host" {
-  procfs_path        = "/proc"
-  sysfs_path         = "/sys"
-  rootfs_path        = "/"
-  textfile_directory = "/var/lib/alloy/textfile"
+  procfs_path = "/proc"
+  sysfs_path  = "/sys"
+  rootfs_path = "/"
+  textfile {
+    directory = "/var/lib/alloy/textfile"
+  }
 }
 
 prometheus.scrape "host" {

@@ -383,8 +383,7 @@
         name:
           - jq
           - curl
-          - apt-transport-https
-          - software-properties-common
+          - gnupg
         state: present
 
     # ── Grafana APT repo + Alloy install ───────────────
