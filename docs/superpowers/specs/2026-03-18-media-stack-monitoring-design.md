@@ -458,6 +458,10 @@ All rules in a new `Media Stack` folder under Grafana Alerting, deployed via `ku
 
 Every alert annotation includes `runbook_url` pointing to `docs/runbooks/media-stack-alerts.md#<anchor>`.
 
+**Note on `job_name` convention:** The existing `InfraHostDown` alert filters on `job="integrations/unix"`. This spec uses `job_name = "node"` for host metrics, which means `InfraHostDown` will NOT fire for the media-stack LXC. This is intentional — media-stack is an LXC (not bare metal infrastructure), and has its own `MediaContainerDown` alert for critical service availability. If LXC-level host-down detection is desired in the future, add a dedicated alert filtering on `instance="media-stack"`.
+
+**Note on `MediaContainerDown`:** Uses `absent()` which fires a single alert when all container metrics vanish (e.g., if Alloy or cAdvisor itself goes down), not per-container alerts. This is acceptable — if the monitoring agent is down, a single "monitoring broken" alert is sufficient.
+
 | Alert | Expression | For | Severity |
 |-------|-----------|-----|----------|
 | MediaContainerDown | `absent(container_last_seen{name=~"decypharr\|jellyfin\|radarr\|sonarr\|prowlarr", instance="media-stack"})` | 5m | critical |
