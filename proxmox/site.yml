@@ -1,6 +1,6 @@
 ---
 - name: Configure Proxmox VE nodes
-  hosts: all
+  hosts: pve_nodes
   become: true
 
   pre_tasks:
