@@ -238,23 +238,9 @@ services:
       - sonarr
     restart: unless-stopped
 
-  # ── Monitoring: cAdvisor (container metrics) ────────
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.51.0
-    container_name: cadvisor
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # cAdvisor removed — Alloy's built-in prometheus.exporter.cadvisor
+  # provides container metrics with proper Docker container names.
+  # Standalone cAdvisor in an LXC only sees cgroup paths, not names.
 
   # ── Monitoring: Scraparr (arr app metrics) ──────────
   # Note: ${VAR} syntax is resolved by Docker Compose from the .env file.

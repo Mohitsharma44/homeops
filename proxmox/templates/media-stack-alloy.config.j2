@@ -23,10 +23,16 @@ prometheus.scrape "host" {
 }
 
 // ============================================================
-// cAdvisor (Docker container metrics)
+// Container metrics (built-in cAdvisor via Docker socket)
+// Uses Alloy's embedded cAdvisor — gives proper container names
+// unlike standalone cAdvisor which only sees cgroup paths in LXC
 // ============================================================
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
 prometheus.scrape "cadvisor" {
-  targets         = [{"__address__" = "127.0.0.1:8080"}]
+  targets         = prometheus.exporter.cadvisor.containers.targets
   forward_to      = [prometheus.relabel.instance.receiver]
   scrape_interval = "60s"
   job_name        = "cadvisor"
