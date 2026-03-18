@@ -532,44 +532,28 @@
     #   GET  /Plugins               → list installed plugins (unused here;
     #                                  /metrics is a core feature)
 
-    - name: Wait for Jellyfin API to be ready
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:8096/System/Info/Public"
-        method: GET
-        status_code: 200
-      register: jellyfin_health
-      until: jellyfin_health.status == 200
-      retries: 30
-      delay: 5
+    # ── Jellyfin Prometheus metrics ───────────────────
+    # EnableMetrics is a built-in Jellyfin feature (not a plugin).
+    # Must be set in system.xml and requires a container restart.
+    # The API-based approach is fragile; direct XML edit is reliable.
+    - name: Wait for Jellyfin system.xml to exist
+      ansible.builtin.wait_for:
+        path: /opt/media-stack/config/jellyfin/config/system.xml
+        timeout: 120
 
-    - name: Get Jellyfin server configuration
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:8096/System/Configuration"
-        method: GET
-        headers:
-          X-Emby-Token: "{{ vault_jellyfin_api_key }}"
-        return_content: true
-        status_code: 200
-      register: jellyfin_config
+    - name: Enable Jellyfin Prometheus metrics in system.xml
+      ansible.builtin.lineinfile:
+        path: /opt/media-stack/config/jellyfin/config/system.xml
+        regexp: '<EnableMetrics>.*</EnableMetrics>'
+        line: '  <EnableMetrics>true</EnableMetrics>'
+        insertbefore: '</ServerConfiguration>'
+      register: jellyfin_metrics_config
 
-    - name: Enable Jellyfin Prometheus metrics endpoint
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:8096/System/Configuration"
-        method: POST
-        headers:
-          X-Emby-Token: "{{ vault_jellyfin_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body: "{{ jellyfin_config.json | combine({'EnableMetrics': true}) }}"
-        status_code: [200, 204]
-      when: not (jellyfin_config.json.EnableMetrics | default(false))
-      register: jellyfin_metrics_enabled
-
-    - name: Restart Jellyfin container to activate metrics
+    - name: Restart Jellyfin container to activate metrics endpoint
       ansible.builtin.command:
         cmd: docker compose restart jellyfin
         chdir: /opt/media-stack
-      when: jellyfin_metrics_enabled is changed
+      when: jellyfin_metrics_config is changed
       changed_when: true
 
   handlers:
