@@ -1,0 +1,207 @@
+# Media Stack — rendered by Ansible, do not edit on host directly
+# Re-deploy: ansible-playbook proxmox/media-stack.yml
+
+networks:
+  media-net:
+    driver: bridge
+
+services:
+
+  decypharr:
+    image: cy01/blackhole:latest
+    container_name: decypharr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "8282:8282"
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - /opt/media-stack/config/decypharr:/app/config
+      - /mnt/debrid:/mnt/debrid:rshared
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+      - JELLYFIN_PublishedServerUrl=http://{{ media_stack_ip }}
+    ports:
+      - "8096:8096"
+    devices:
+      - /dev/dri:/dev/dri
+    tmpfs:
+      - /config/transcodes:size=8G
+    volumes:
+      - /opt/media-stack/config/jellyfin:/config
+      - /mnt/debrid/decypharr_symlinks:/media/debrid:ro
+      - /mnt/local-media:/media/local
+    networks:
+      - media-net
+    depends_on:
+      - decypharr
+    restart: unless-stopped
+
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "9696:9696"
+    volumes:
+      - /opt/media-stack/config/prowlarr:/config
+    networks:
+      - media-net
+    restart: unless-stopped
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "7878:7878"
+    volumes:
+      - /opt/media-stack/config/radarr:/config
+      - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/local-media:/mnt/local-media
+    networks:
+      - media-net
+    depends_on:
+      - decypharr
+      - prowlarr
+    restart: unless-stopped
+
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "8989:8989"
+    volumes:
+      - /opt/media-stack/config/sonarr:/config
+      - /mnt/debrid:/mnt/debrid:rshared
+      - /mnt/local-media:/mnt/local-media
+    networks:
+      - media-net
+    depends_on:
+      - decypharr
+      - prowlarr
+    restart: unless-stopped
+
+  bazarr:
+    image: linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    env_file:
+      - .env
+    ports:
+      - "6767:6767"
+    volumes:
+      - /opt/media-stack/config/bazarr:/config
+      - /mnt/debrid/decypharr_symlinks:/media/debrid:ro
+      - /mnt/local-media:/media/local
+    networks:
+      - media-net
+    depends_on:
+      - radarr
+      - sonarr
+    restart: unless-stopped
+
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
+    container_name: jellyseerr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "5055:5055"
+    volumes:
+      - /opt/media-stack/config/jellyseerr:/app/config
+    networks:
+      - media-net
+    depends_on:
+      - jellyfin
+      - radarr
+      - sonarr
+    restart: unless-stopped
+
+  suggestarr:
+    image: ciuse99/suggestarr:latest
+    container_name: suggestarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    env_file:
+      - .env
+    ports:
+      - "5000:5000"
+    volumes:
+      - /opt/media-stack/config/suggestarr:/app/config/config_files
+    networks:
+      - media-net
+    depends_on:
+      - jellyfin
+      - jellyseerr
+    restart: unless-stopped
+
+  tunarr:
+    image: jasongdove/tunarr:latest
+    container_name: tunarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - /opt/media-stack/config/tunarr:/config
+    networks:
+      - media-net
+    depends_on:
+      - jellyfin
+    restart: unless-stopped
+
+  profilarr:
+    image: ghcr.io/dictionarry-hub/profilarr:latest
+    container_name: profilarr
+    environment:
+      - PUID={{ media_stack_puid }}
+      - PGID={{ media_stack_pgid }}
+      - TZ=America/New_York
+    ports:
+      - "6868:6868"
+    volumes:
+      - /opt/media-stack/config/profilarr:/app/data
+    networks:
+      - media-net
+    depends_on:
+      - radarr
+      - sonarr
+    restart: unless-stopped
