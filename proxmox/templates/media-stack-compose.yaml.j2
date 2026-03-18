@@ -265,14 +265,15 @@ services:
     ports:
       - "127.0.0.1:7100:7100"
     environment:
-      - RADARR__URL=http://radarr:7878
-      - RADARR__API_KEY=${RADARR_API_KEY}
-      - SONARR__URL=http://sonarr:8989
-      - SONARR__API_KEY=${SONARR_API_KEY}
-      - PROWLARR__URL=http://prowlarr:9696
-      - PROWLARR__API_KEY=${PROWLARR_API_KEY}
-      - BAZARR__URL=http://bazarr:6767
-      - BAZARR__API_KEY=${BAZARR_API_KEY}
+      - RADARR_URL=http://radarr:7878
+      - RADARR_API_KEY=${RADARR_API_KEY}
+      - SONARR_URL=http://sonarr:8989
+      - SONARR_API_KEY=${SONARR_API_KEY}
+      - PROWLARR_URL=http://prowlarr:9696
+      - PROWLARR_API_KEY=${PROWLARR_API_KEY}
+      - PROWLARR_API_VERSION=v1
+      - BAZARR_URL=http://bazarr:6767
+      - BAZARR_API_KEY=${BAZARR_API_KEY}
     networks:
       - media-net
     depends_on:
