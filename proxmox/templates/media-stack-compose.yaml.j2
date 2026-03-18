@@ -237,3 +237,95 @@ services:
       - radarr
       - sonarr
     restart: unless-stopped
+
+  # ── Monitoring: cAdvisor (container metrics) ────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    container_name: cadvisor
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Monitoring: Scraparr (arr app metrics) ──────────
+  # Note: ${VAR} syntax is resolved by Docker Compose from the .env file.
+  # Do NOT use env_file here — it would leak unrelated secrets into this container.
+  scraparr:
+    image: ghcr.io/thecfu/scraparr:latest
+    container_name: scraparr
+    ports:
+      - "127.0.0.1:7100:7100"
+    environment:
+      - RADARR__URL=http://radarr:7878
+      - RADARR__API_KEY=${RADARR_API_KEY}
+      - SONARR__URL=http://sonarr:8989
+      - SONARR__API_KEY=${SONARR_API_KEY}
+      - PROWLARR__URL=http://prowlarr:9696
+      - PROWLARR__API_KEY=${PROWLARR_API_KEY}
+      - BAZARR__URL=http://bazarr:6767
+      - BAZARR__API_KEY=${BAZARR_API_KEY}
+    networks:
+      - media-net
+    depends_on:
+      - radarr
+      - sonarr
+      - prowlarr
+      - bazarr
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Analytics: Jellystat PostgreSQL ─────────────────
+  jellystat-db:
+    image: postgres:16-alpine
+    container_name: jellystat-db
+    environment:
+      - POSTGRES_USER=jellystat
+      - POSTGRES_PASSWORD=${JELLYSTAT_DB_PASSWORD}
+      - POSTGRES_DB=jellystat
+    volumes:
+      - /opt/media-stack/config/jellystat-db:/var/lib/postgresql/data
+    networks:
+      - media-net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Analytics: Jellystat (playback analytics UI) ────
+  jellystat:
+    image: cyfershepard/jellystat:latest
+    container_name: jellystat
+    ports:
+      - "3000:3000"
+    environment:
+      - POSTGRES_USER=jellystat
+      - POSTGRES_PASSWORD=${JELLYSTAT_DB_PASSWORD}
+      - POSTGRES_IP=jellystat-db
+      - POSTGRES_PORT=5432
+      - JWT_SECRET=${JELLYSTAT_JWT_SECRET}
+      - TZ=America/Vancouver
+    depends_on:
+      - jellystat-db
+    networks:
+      - media-net
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -292,6 +292,7 @@
         - suggestarr
         - tunarr
         - profilarr
+        - jellystat-db
 
     - name: Create debrid mount point
       ansible.builtin.file:
