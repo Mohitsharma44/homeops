@@ -1,6 +1,6 @@
 ---
-# Proxmox VE Configuration - R720XD Standalone Node
-# Uses lae.proxmox role for base configuration
+# Proxmox VE Configuration — Shared across all nodes
+# Host-specific overrides in host_vars/{hostname}.yml
 
 # ── Core ────────────────────────────────────────────
 pve_group: all
@@ -18,42 +18,7 @@ pve_reboot_on_kernel_update: false
 
 # ── ZFS ─────────────────────────────────────────────
 pve_zfs_enabled: yes
-# 192GB ARC max (leaves 64GB for VMs/system out of 256GB total)
-pve_zfs_options: "zfs_arc_max=206158430208"
-
-# ── Storage Backends ────────────────────────────────
-# Pools must already be imported before running this playbook
-pve_storages:
-  - name: pool0-store
-    type: zfspool
-    content: ["images", "rootdir"]
-    pool: pool0
-    sparse: true
-
-  - name: ssdpool0-store
-    type: zfspool
-    content: ["images", "rootdir"]
-    pool: ssdpool0
-    sparse: true
-
-  - name: local-ssd
-    type: zfspool
-    content: ["images", "rootdir"]
-    pool: local-ssd
-    sparse: true
-
-# ── Local SSD Pool (VM/LXC storage) ────────────────
-# ZFS mirror on 2x Samsung 870 EVO 1TB (was TrueNAS ssdpool1)
-local_ssd_pool:
-  name: local-ssd
-  vdev: mirror
-  drives:
-    - /dev/disk/by-id/ata-Samsung_SSD_870_EVO_1TB_S625NZ0R909545W
-    - /dev/disk/by-id/ata-Samsung_SSD_870_EVO_1TB_S625NZ0R909519P
-  properties:
-    ashift: 12
-    compression: lz4
-    atime: "off"
+# pve_zfs_options set per-host in host_vars (ARC size depends on RAM)
 
 # ── Users ───────────────────────────────────────────
 pve_groups:
@@ -73,15 +38,8 @@ pve_acls:
 pve_datacenter_cfg:
   keyboard: en-us
 
-# ── NFS Export ──────────────────────────────────────
-# Not handled by lae.proxmox role — configured in site.yml tasks
-nfs_exports:
-  - path: /mnt/pool0/nvr
-    network: "192.168.11.0/24"
-    options: "rw,sync,no_subtree_check,no_root_squash"
-
-# ── Monitoring ──────────────────────────────────────
-alloy_instance_name: "r720xd"
+# ── Monitoring (shared) ─────────────────────────────
+# alloy_instance_name set per-host in host_vars
 alloy_prometheus_url: "https://prometheus.sharmamohit.com/api/v1/write"
 alloy_loki_url: "https://loki.sharmamohit.com/loki/api/v1/push"
 smartctl_exporter_version: "0.14.0"
@@ -89,15 +47,8 @@ smartctl_exporter_checksum: "875983cd27affc5a682401930e5a8eea3f06c325fe6d6a7228c
 smartctl_exporter_listen: "127.0.0.1:9633"
 smartctl_exporter_interval: "120s"
 
-# ── Sanoid (ZFS snapshots) ──────────────────────────
-sanoid_datasets:
-  - name: "pool0/nvr"
-    template: data_retention
-    recursive: yes
-  - name: "ssdpool0"
-    template: data_retention
-    recursive: yes
-
+# ── Sanoid (shared template) ────────────────────────
+# sanoid_datasets set per-host in host_vars
 sanoid_templates:
   data_retention:
     frequently: 0
