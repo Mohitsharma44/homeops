@@ -1,0 +1,311 @@
+---
+# Media Stack — NFS setup + LXC creation + Docker deployment
+# Usage: ansible-playbook proxmox/media-stack.yml
+# Spec: docs/superpowers/specs/2026-03-18-media-stack-design.md
+#
+# Prerequisites:
+#   - site.yml has been run on r720xd (NFS server config)
+#   - SOPS secrets populated (vault_rd_api_key, vault_pve03_api_password, etc.)
+
+# ═══════════════════════════════════════════════════════
+# Play 1: Ensure r720xd NFS export for media
+# Must run BEFORE Play 3 (LXC mounts NFS from r720xd)
+# ═══════════════════════════════════════════════════════
+- name: Ensure r720xd NFS export for media
+  hosts: r720xd
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Ensure pool0/media dataset exists
+      ansible.builtin.command:
+        cmd: zfs create pool0/media
+      register: zfs_create
+      changed_when: zfs_create.rc == 0
+      failed_when: zfs_create.rc != 0 and 'dataset already exists' not in zfs_create.stderr
+
+    - name: Set pool0/media ownership
+      ansible.builtin.file:
+        path: /mnt/pool0/media
+        owner: 1100
+        group: 1100
+        mode: "0755"
+        state: directory
+
+# ═══════════════════════════════════════════════════════
+# Play 2: Create and configure LXC on pve03
+# ═══════════════════════════════════════════════════════
+- name: Create media-stack LXC on pve03
+  hosts: pve03
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check if Debian 13 LXC template exists
+      ansible.builtin.stat:
+        path: "/var/lib/vz/template/cache/{{ media_stack_ostemplate | regex_replace('^local:vztmpl/', '') }}"
+      register: lxc_template
+
+    - name: Download Debian 13 LXC template
+      ansible.builtin.command:
+        cmd: "pveam download local {{ media_stack_ostemplate | regex_replace('^local:vztmpl/', '') }}"
+      when: not lxc_template.stat.exists
+
+    - name: Check if SSH key pair exists
+      ansible.builtin.stat:
+        path: /root/.ssh/id_ed25519.pub
+      register: ssh_key_stat
+
+    - name: Generate SSH key pair if not present
+      ansible.builtin.command:
+        cmd: ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+        creates: /root/.ssh/id_ed25519.pub
+      when: not ssh_key_stat.stat.exists
+
+    - name: Read pve03 root SSH public key
+      ansible.builtin.slurp:
+        src: /root/.ssh/id_ed25519.pub
+      register: pve03_root_pubkey
+
+    - name: Create media-stack LXC
+      community.general.proxmox:
+        vmid: "{{ media_stack_vmid }}"
+        hostname: "{{ media_stack_hostname }}"
+        node: "{{ ansible_hostname }}"
+        api_user: root@pam
+        api_password: "{{ vault_pve03_api_password }}"
+        api_host: "{{ ansible_host }}"
+        ostemplate: "{{ media_stack_ostemplate }}"
+        storage: "{{ media_stack_storage }}"
+        disk: "{{ media_stack_disk_size }}"
+        cores: "{{ media_stack_cores }}"
+        memory: "{{ media_stack_memory }}"
+        swap: "{{ media_stack_swap }}"
+        unprivileged: false
+        features:
+          - "nesting=1,fuse=1"
+        netif:
+          net0: "name=eth0,gw={{ media_stack_gateway }},ip={{ media_stack_ip }}/24,bridge=vmbr0"
+        nameserver: "{{ media_stack_nameserver }}"
+        pubkey: "{{ pve03_root_pubkey.content | b64decode | trim }}"
+        onboot: true
+        state: present
+      register: lxc_created
+
+    - name: Configure GPU passthrough in LXC config
+      ansible.builtin.blockinfile:
+        path: "/etc/pve/lxc/{{ media_stack_vmid }}.conf"
+        marker: "# {mark} ANSIBLE MANAGED — GPU + FUSE passthrough"
+        block: |
+          lxc.cgroup2.devices.allow: c 226:* rwm
+          lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+          lxc.cgroup2.devices.allow: c 10:229 rwm
+          lxc.mount.entry: /dev/fuse dev/fuse none bind,optional,create=file
+
+    - name: Start media-stack LXC
+      community.general.proxmox:
+        vmid: "{{ media_stack_vmid }}"
+        node: "{{ ansible_hostname }}"
+        api_user: root@pam
+        api_password: "{{ vault_pve03_api_password }}"
+        api_host: "{{ ansible_host }}"
+        state: started
+
+    - name: Wait for SSH to become available on media-stack LXC
+      ansible.builtin.wait_for:
+        host: "{{ media_stack_ip }}"
+        port: 22
+        delay: 5
+        timeout: 120
+
+    - name: Add media-stack to known_hosts
+      ansible.builtin.known_hosts:
+        name: "{{ media_stack_ip }}"
+        key: "{{ lookup('pipe', 'ssh-keyscan -t ed25519 ' + media_stack_ip + ' 2>/dev/null') }}"
+        state: present
+
+# ═══════════════════════════════════════════════════════
+# Play 3: Configure Docker + deploy stack inside LXC
+# ═══════════════════════════════════════════════════════
+- name: Configure media-stack LXC
+  hosts: media-stack
+  become: true
+  gather_facts: true
+
+  tasks:
+    # ── System setup ──────────────────────────────────
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - nfs-common
+          - fuse3
+          - libfuse2
+        state: present
+
+    - name: Create media group
+      ansible.builtin.group:
+        name: media
+        gid: "{{ media_stack_pgid }}"
+        state: present
+
+    - name: Create media user
+      ansible.builtin.user:
+        name: media
+        uid: "{{ media_stack_puid }}"
+        group: media
+        shell: /usr/sbin/nologin
+        create_home: false
+        state: present
+
+    # ── Docker CE installation ────────────────────────
+    - name: Ensure keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /tmp/docker-gpg.key
+        mode: "0644"
+
+    - name: Dearmor and install Docker GPG key
+      ansible.builtin.command:
+        cmd: gpg --batch --yes --dearmor --output /etc/apt/keyrings/docker.gpg /tmp/docker-gpg.key
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Set Docker keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/docker.gpg
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+        update_cache: yes
+
+    - name: Install Docker CE
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    # ── NFS mount ─────────────────────────────────────
+    - name: Create local media mount point
+      ansible.builtin.file:
+        path: /mnt/local-media
+        state: directory
+        owner: "{{ media_stack_puid }}"
+        group: "{{ media_stack_pgid }}"
+        mode: "0755"
+
+    - name: Configure NFS mount in fstab
+      ansible.posix.mount:
+        src: "{{ media_stack_nfs_server }}:{{ media_stack_nfs_path }}"
+        path: /mnt/local-media
+        fstype: nfs
+        opts: rw,soft,intr
+        state: mounted
+
+    # ── Directory structure ───────────────────────────
+    - name: Create media stack directories
+      ansible.builtin.file:
+        path: "/opt/media-stack/config/{{ item }}"
+        state: directory
+        owner: "{{ media_stack_puid }}"
+        group: "{{ media_stack_pgid }}"
+        mode: "0755"
+      loop:
+        - jellyfin
+        - radarr
+        - sonarr
+        - prowlarr
+        - bazarr
+        - jellyseerr
+        - decypharr
+        - suggestarr
+        - tunarr
+        - profilarr
+
+    - name: Create debrid mount point
+      ansible.builtin.file:
+        path: /mnt/debrid
+        state: directory
+        owner: "{{ media_stack_puid }}"
+        group: "{{ media_stack_pgid }}"
+        mode: "0755"
+
+    - name: Create local media subdirectories
+      ansible.builtin.file:
+        path: "/mnt/local-media/{{ item }}"
+        state: directory
+        owner: "{{ media_stack_puid }}"
+        group: "{{ media_stack_pgid }}"
+        mode: "0755"
+      loop:
+        - movies
+        - tv
+
+    # ── Deploy configs ────────────────────────────────
+    - name: Deploy Decypharr config
+      ansible.builtin.template:
+        src: decypharr-config.json.j2
+        dest: /opt/media-stack/config/decypharr/config.json
+        owner: "{{ media_stack_puid }}"
+        group: "{{ media_stack_pgid }}"
+        mode: "0600"
+      register: decypharr_config_changed
+
+    - name: Deploy environment file
+      ansible.builtin.template:
+        src: media-stack-env.j2
+        dest: /opt/media-stack/.env
+        owner: root
+        group: root
+        mode: "0600"
+      register: env_changed
+
+    - name: Deploy Docker Compose file
+      ansible.builtin.template:
+        src: media-stack-compose.yaml.j2
+        dest: /opt/media-stack/compose.yaml
+        owner: root
+        group: root
+        mode: "0644"
+      register: compose_changed
+
+    # ── Start/update the stack ────────────────────────
+    - name: Deploy media stack
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /opt/media-stack
+      register: compose_up
+      changed_when: "'Started' in compose_up.stderr or 'Created' in compose_up.stderr or 'Recreated' in compose_up.stderr"
+      when: compose_changed.changed or env_changed.changed or decypharr_config_changed.changed
+
+    - name: Ensure media stack is running
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /opt/media-stack
+      changed_when: false
+      when: not (compose_changed.changed or env_changed.changed or decypharr_config_changed.changed)
