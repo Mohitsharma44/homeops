@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+"""
+Tunarr Genre Channel Sync
+
+Queries Tunarr's program index for genres, creates/updates channels split by
+movies vs shows. Runs daily via cron. Channels grow automatically as the
+Jellyfin library grows through Jellyseerr requests.
+
+Flow: Jellyseerr → Sonarr/Radarr → Decypharr → Jellyfin → Tunarr scan → this script
+
+Channel naming:
+  - "Comedy Movies", "Comedy Shows" when both exist for a genre
+  - "Comedy" when only one type exists
+"""
+import json
+import logging
+import random
+import sys
+import uuid
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+
+TUNARR_URL = "http://127.0.0.1:8000"
+GROUP_TITLE = "tunarr"
+
+# Merge inconsistent Jellyfin genre names into canonical names
+GENRE_MERGE = {
+    "Action & Adventure": "Action",
+    "Sci-Fi & Fantasy": "Fantasy",
+    "Science Fiction": "Sci-Fi",
+}
+
+# Playable program types
+MOVIE_TYPES = {"movie"}
+SHOW_TYPES = {"episode"}
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger("tunarr-sync")
+
+
+def api(method, path, body=None):
+    url = f"{TUNARR_URL}{path}"
+    data = json.dumps(body).encode() if body else None
+    req = Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urlopen(req, timeout=300) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except HTTPError as e:
+        err = e.read().decode()
+        log.error(f"{method} {path} -> {e.code}: {err[:500]}")
+        raise
+    except URLError as e:
+        log.error(f"{method} {path} -> {e.reason}")
+        raise
+
+
+def get_genre_counts():
+    data = api("GET", "/api/programs/facets/genres.name")
+    raw = data.get("facetValues", {})
+    merged = {}
+    for genre, count in raw.items():
+        canonical = GENRE_MERGE.get(genre, genre)
+        merged[canonical] = merged.get(canonical, 0) + count
+    return merged
+
+
+def find_source_genres(canonical_genre):
+    names = [canonical_genre]
+    for source, target in GENRE_MERGE.items():
+        if target == canonical_genre:
+            names.append(source)
+    return names
+
+
+def search_programs(genre_names, type_filter=None, expected_count=10000):
+    """Search Tunarr for programs matching given genres.
+    If type_filter is set (e.g. {'movie'} or {'episode'}), only return those types.
+    Uses a single request — Tunarr's search API does not support pagination (offset is ignored)."""
+    valid = type_filter or (MOVIE_TYPES | SHOW_TYPES)
+    data = api("POST", "/api/programs/search", {
+        "query": {
+            "filter": {
+                "type": "value",
+                "fieldSpec": {
+                    "key": "genres.name",
+                    "name": "genres.name",
+                    "type": "string",
+                    "op": "in",
+                    "value": genre_names,
+                },
+            }
+        },
+        "offset": 0,
+        "limit": max(expected_count + 500, 10000),
+    })
+    results = data.get("results", [])
+    seen = set()
+    all_programs = []
+    for r in results:
+        uid = r["uuid"]
+        if uid not in seen and r.get("type") in valid:
+            seen.add(uid)
+            all_programs.append({
+                "uuid": uid,
+                "type": r["type"],
+                "duration": r.get("duration", 1800000),
+            })
+    return all_programs
+
+
+def get_default_transcode_config_id():
+    """Get the default transcode config ID from Tunarr."""
+    configs = api("GET", "/api/transcode_configs")
+    for c in configs:
+        if c.get("isDefault"):
+            return c["id"]
+    if configs:
+        return configs[0]["id"]
+    return ""
+
+
+def create_channel(name, number, transcode_config_id=""):
+    channel = {
+        "disableFillerOverlay": False,
+        "duration": 0,
+        "fillerRepeatCooldown": 30000,
+        "groupTitle": GROUP_TITLE,
+        "guideMinimumDuration": 30000,
+        "icon": {"path": "", "width": 0, "duration": 0, "position": "bottom-right"},
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "number": number,
+        "offline": {"picture": "", "soundtrack": "", "mode": "pic"},
+        "startTime": 0,
+        "stealth": False,
+        "watermark": {
+            "url": "", "enabled": False, "position": "bottom-right",
+            "width": 10, "verticalMargin": 1, "horizontalMargin": 1,
+            "duration": 0, "fixedSize": False, "animated": False, "opacity": 100,
+        },
+        "onDemand": {"enabled": False},
+        "streamMode": "hls",
+        "transcodeConfigId": transcode_config_id,
+        "subtitlesEnabled": False,
+    }
+    api("POST", "/api/channels", {"type": "new", "channel": channel})
+    log.info(f"Created channel '{name}' (#{number})")
+
+
+def set_programming(channel_id, programs):
+    """Set channel programming using persisted references, shuffled."""
+    shuffled = list(programs)
+    random.shuffle(shuffled)
+    lineup = [
+        {"type": "persisted", "programId": p["uuid"], "duration": p.get("duration", 1800000)}
+        for p in shuffled
+    ]
+    api("POST", f"/api/channels/{channel_id}/programming", {
+        "type": "manual",
+        "programs": [],
+        "lineup": lineup,
+        "append": False,
+    })
+
+
+def ensure_channel(name, programs, existing, used_numbers, next_number_ref, transcode_id=""):
+    """Create or update a channel. Returns (created, updated) counts."""
+    if not programs:
+        return 0, 0
+
+    if name in existing:
+        ch = existing[name]
+        old_count = ch.get("programCount", 0)
+        if old_count == len(programs):
+            log.info(f"  {name}: {len(programs)} programs (unchanged)")
+            return 0, 0
+        log.info(f"  {name}: {old_count} -> {len(programs)} programs")
+        set_programming(ch["id"], programs)
+        return 0, 1
+
+    # Find next available number
+    n = next_number_ref[0]
+    while n in used_numbers:
+        n += 1
+    log.info(f"  {name}: creating ch #{n} with {len(programs)} programs")
+    create_channel(name, n, transcode_id)
+    used_numbers.add(n)
+    next_number_ref[0] = n + 1
+
+    # Get new channel ID and set programming
+    refreshed = {c["name"]: c for c in api("GET", "/api/channels")}
+    if name in refreshed:
+        set_programming(refreshed[name]["id"], programs)
+    return 1, 0
+
+
+def sync():
+    log.info("Starting Tunarr genre channel sync")
+
+    version = api("GET", "/api/version")
+    log.info(f"Tunarr version: {version.get('tunarr', '?')}")
+
+    genre_counts = get_genre_counts()
+    log.info(f"Genres: {genre_counts}")
+
+    transcode_id = get_default_transcode_config_id()
+    log.info(f"Default transcode config: {transcode_id}")
+
+    existing = {c["name"]: c for c in api("GET", "/api/channels")}
+    used_numbers = {c["number"] for c in existing.values()}
+    next_number = [max(used_numbers, default=0) + 1]
+
+    total_created = 0
+    total_updated = 0
+
+    for genre in sorted(genre_counts, key=lambda g: -genre_counts[g]):
+        source_genres = find_source_genres(genre)
+        all_programs = search_programs(source_genres, expected_count=genre_counts[genre])
+
+        if not all_programs:
+            log.info(f"  {genre}: no playable programs, skipping")
+            continue
+
+        # Split into movies and shows
+        movies = [p for p in all_programs if p["type"] in MOVIE_TYPES]
+        shows = [p for p in all_programs if p["type"] in SHOW_TYPES]
+
+        has_both = bool(movies) and bool(shows)
+
+        if has_both:
+            c, u = ensure_channel(f"{genre} Movies", movies, existing, used_numbers, next_number, transcode_id)
+            total_created += c
+            total_updated += u
+            c, u = ensure_channel(f"{genre} Shows", shows, existing, used_numbers, next_number, transcode_id)
+            total_created += c
+            total_updated += u
+        elif movies:
+            c, u = ensure_channel(f"{genre} Movies", movies, existing, used_numbers, next_number, transcode_id)
+            total_created += c
+            total_updated += u
+        elif shows:
+            c, u = ensure_channel(f"{genre} Shows", shows, existing, used_numbers, next_number, transcode_id)
+            total_created += c
+            total_updated += u
+
+    log.info(f"Sync complete: {total_created} created, {total_updated} updated")
+
+
+if __name__ == "__main__":
+    try:
+        sync()
+    except Exception as e:
+        log.error(f"Sync failed: {e}", exc_info=True)
+        sys.exit(1)
