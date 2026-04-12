@@ -203,7 +203,7 @@ All 3 servers use the same approach: `smartctl_exporter` as a hardened systemd s
 |------|------------|---------|-------|
 | server04 | `/opt/smartctl-exporter/smartctl_exporter` | v0.14.0 | Standard install to `/opt/` |
 | pve | `/opt/smartctl-exporter/smartctl_exporter` | v0.13.0 | Standard install to `/opt/` |
-| truenas | `/root/smartctl-exporter/smartctl_exporter` | v0.13.0 | `/opt/` is read-only, `/mnt/` has `noexec` — binary must live under `/root/` |
+| truenas | `/mnt/ssdpool1/admin/smartctl-exporter/smartctl_exporter` | v0.13.0 | Persistent ZFS dataset; survives OS upgrades. Post Init Script re-links systemd units on boot |
 
 Download and install:
 
@@ -601,17 +601,31 @@ Same approach as pve: smartctl_exporter + Alloy both as systemd services on the 
 
 **Listen address**: `127.0.0.1:9633` — local scrape only.
 
-**Alloy installation**: TrueNAS blocks APT package management ("Package management tools are disabled on TrueNAS appliances"), so Alloy is installed as a standalone binary downloaded from GitHub releases. Installed at `/root/alloy/alloy` (v1.6.1). A custom systemd unit at `/etc/systemd/system/alloy.service` runs it.
+**Alloy installation**: TrueNAS blocks APT package management ("Package management tools are disabled on TrueNAS appliances"), so Alloy is installed as a standalone binary downloaded from GitHub releases. Installed at `/mnt/ssdpool1/admin/alloy/alloy-linux-amd64` (v1.14.0). A custom systemd unit symlinked from `/mnt/ssdpool1/admin/systemd/alloy.service` runs it.
 
-**Config**: Same River config structure as pve, but with `instance = "truenas"`. Config at `/etc/alloy/config.alloy`, env at `/etc/default/alloy` (mode 0600).
+**Config**: Same River config structure as pve, but with `instance = "truenas"`. Config at `/mnt/ssdpool1/admin/config/alloy/config.alloy`, env at `/mnt/ssdpool1/admin/config/alloy/env` (mode 0600).
+
+**Persistent storage** (survives TrueNAS OS upgrades):
+All binaries, configs, systemd units, and the init script live on `/mnt/ssdpool1/admin/` (a ZFS dataset that persists across OS upgrades):
+```
+/mnt/ssdpool1/admin/
+├── alloy/alloy-linux-amd64          # Alloy v1.14.0 binary
+├── smartctl-exporter/smartctl_exporter  # smartctl_exporter v0.13.0 binary
+├── config/alloy/config.alloy        # River config
+├── config/alloy/env                 # Credentials (mode 0600)
+├── systemd/alloy.service            # Systemd unit for Alloy
+├── systemd/smartctl-exporter.service # Systemd unit for smartctl_exporter
+└── init-monitoring.sh               # Post Init Script (idempotent)
+```
+
+**Post Init Script**: `/mnt/ssdpool1/admin/init-monitoring.sh` — registered in TrueNAS UI (System > Advanced > Init/Shutdown Scripts, Type: Post Init). On boot, it symlinks systemd units from the ZFS dataset into `/etc/systemd/system/`, reloads systemd, and starts both services. Idempotent — safe to run multiple times.
 
 **TrueNAS filesystem constraints** (discovered during install):
 - `/opt/` is **read-only** (root FS is immutable ZFS boot pool)
-- `/mnt/` is mounted with **`noexec`** — binaries cannot execute from ZFS data pools
-- `/root/` is writable and executable — both smartctl_exporter and Alloy binaries live under `/root/`
-- `/etc/systemd/system/` is writable — custom systemd services work
-- `ProtectHome=false` in both systemd services since binaries live under `/root/`
-- TrueNAS OS upgrades may reset `/etc/systemd/system/` and `/root/`. The `SmartExporterDown` alert will fire if this happens. Reinstall from documented steps.
+- `/mnt/ssdpool1/` allows exec (tested on TrueNAS SCALE 24.10) — binaries run from ZFS data pools
+- `/etc/systemd/system/` is writable — custom systemd services work via symlinks
+- `ProtectHome=false` in both systemd services
+- TrueNAS OS upgrades reset `/etc/systemd/system/` and `/root/`, but the Post Init Script automatically re-links everything on boot
 
 ### Listen Address Summary
 
@@ -620,7 +634,7 @@ All smartctl_exporter instances bind to `127.0.0.1:9633` — Alloy always runs o
 | Host | smartctl_exporter | Binary path | Alloy | Notes |
 |------|------------------|-------------|-------|-------|
 | pve | `127.0.0.1:9633` (systemd, v0.13.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 2 SSDs, auto-scan. Host metrics + SMART + journal |
-| truenas | `127.0.0.1:9633` (systemd, v0.13.0) | `/root/smartctl-exporter/` | Systemd (manual binary, v1.6.1 at `/root/alloy/`) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal |
+| truenas | `127.0.0.1:9633` (systemd, v0.13.0) | `/mnt/ssdpool1/admin/smartctl-exporter/` | Systemd (manual binary, v1.14.0 at `/mnt/ssdpool1/admin/alloy/`) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal. All files on persistent ZFS dataset |
 | server04 | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 5 drives (4 SAS via `";cciss,0"` + 1 SSD). Host metrics + SMART + cAdvisor + Docker logs + journal. Replaces `server04-alloy` Komodo stack |
 
 ---
@@ -748,7 +762,7 @@ If credentials need to be rotated:
 
 | Risk | Mitigation |
 |------|------------|
-| smartctl_exporter/Alloy wiped by TrueNAS major upgrade | Both `SmartExporterDown` and Alloy health alerts fire. Reinstall from documented steps. Binary in `/opt/` and APT packages survive minor updates |
+| smartctl_exporter/Alloy wiped by TrueNAS major upgrade | Binaries, configs, and systemd units now persist on `/mnt/ssdpool1/admin/` (ZFS dataset). A Post Init Script (`/mnt/ssdpool1/admin/init-monitoring.sh`) re-links systemd units and starts services on boot. Register in TrueNAS UI: System > Advanced > Init/Shutdown Scripts (Type: Post Init). If init script itself is missing, the ZFS dataset survived — just re-register it |
 | Alloy on pve wiped by Proxmox major upgrade | Same alert-based detection. APT packages generally survive Proxmox upgrades since they use standard Debian packaging |
 | Alert flood on initial deploy | `group_wait: 3m`, `repeat_interval: 6h` (warnings) / `1h` (critical) |
 | HP Smart Array hides new drives | If drives are added/replaced, update `cciss,N` flags in systemd service and restart |
@@ -757,6 +771,12 @@ If credentials need to be rotated:
 | ZFS pool degraded but SMART OK | Phase 5 adds ZFS pool state monitoring (stretch goal) |
 | Alloy credentials on pve/truenas/server04 not SOPS-managed | Env file with mode 0600. Credentials are same as Docker Alloy instances. Rotation procedure documented in manual steps |
 | server04 Docker Alloy removal is a migration | Deploy systemd Alloy first, verify metrics/logs flowing, then undeploy Docker Alloy. Brief gap possible during cutover |
+
+## Known Limitations
+
+**Grafana "metric might not be a counter" warnings on remote-write metrics**: Grafana queries the Prometheus metadata API to determine metric types, but this API only returns metadata for scraped targets — not for metrics arriving via remote_write. All infrastructure host metrics (pve, truenas, server04, kasm, komodo, nvr, omni, seaweedfs, racknerd-aegis) arrive via Alloy remote_write and lack type metadata in Prometheus. This causes Grafana to show warnings when `rate()` is used on counter metrics like `node_zfs_arc_hits`, `node_zfs_zpool_dataset_reads`, etc. The warnings are cosmetic — `rate()` is correct for these metrics. Tested with Remote Write v2 protocol (Alloy v1.14.0 + Prometheus 3.9.1) — metadata is included in the wire protocol but Prometheus still does not surface it via the metadata API.
+
+**TrueNAS Grafana dashboard**: Deployed at uid `truenas-health` with ZFS pool health, ARC cache, SMART disk health, system resources, and correlated Loki journal logs.
 
 ## SRE Review Findings Addressed
 
