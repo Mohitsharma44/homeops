@@ -1199,7 +1199,7 @@ spec:
                             to: 0
                           datasourceUid: loki
                           model:
-                            expr: 'count_over_time({container="/decypharr", instance="media-stack"} |~ "(?i)429|rate.?limit|too many requests|giving up after \\d+ attempt"[15m])'
+                            expr: 'count_over_time({container="/decypharr", instance="media-stack"} |~ "(?i)429|rate.?limit|too many requests|giving up after"[15m])'
                             queryType: range
                             refId: A
                         - refId: B
