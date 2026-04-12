@@ -858,8 +858,12 @@ spec:
                   folder: Media Stack
                   interval: 60s
                   rules:
-                    - uid: media-container-down
-                      title: MediaContainerDown
+                    # Service-level health — cAdvisor was removed (1bc4ea0),
+                    # so we rely on: scraparr_services_up for *arr apps,
+                    # up{job="jellyfin"} for Jellyfin, and
+                    # rd_fuse_mount_healthy for Decypharr's FUSE mount.
+                    - uid: media-arr-service-down
+                      title: MediaArrServiceDown
                       condition: C
                       data:
                         - refId: A
@@ -868,7 +872,7 @@ spec:
                             to: 0
                           datasourceUid: thanos
                           model:
-                            expr: 'absent(container_last_seen{name=~"decypharr|jellyfin|radarr|sonarr|prowlarr", instance="media-stack"})'
+                            expr: 'scraparr_services_up{instance="media-stack"}'
                             refId: A
                         - refId: B
                           datasourceUid: __expr__
@@ -884,8 +888,8 @@ spec:
                             expression: B
                             conditions:
                               - evaluator:
-                                  type: gt
-                                  params: [0]
+                                  type: lt
+                                  params: [1]
                             refId: C
                       for: 5m
                       noDataState: NoData
@@ -893,19 +897,19 @@ spec:
                       labels:
                         severity: critical
                       annotations:
-                        summary: 'One or more media stack containers (decypharr, jellyfin, radarr, sonarr, prowlarr) are not running'
+                        summary: 'Media stack arr service {{ "{{" }} $labels.scraparr_services {{ "}}" }} is not reporting healthy'
                         runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
-                    - uid: media-container-restart-loop
-                      title: MediaContainerRestartLoop
+                    - uid: media-jellyfin-down
+                      title: MediaJellyfinDown
                       condition: C
                       data:
                         - refId: A
                           relativeTimeRange:
-                            from: 3600
+                            from: 600
                             to: 0
                           datasourceUid: thanos
                           model:
-                            expr: 'increase(container_restart_count{instance="media-stack"}[1h])'
+                            expr: 'up{job="jellyfin",instance="media-stack"}'
                             refId: A
                         - refId: B
                           datasourceUid: __expr__
@@ -921,17 +925,54 @@ spec:
                             expression: B
                             conditions:
                               - evaluator:
-                                  type: gt
-                                  params: [3]
+                                  type: lt
+                                  params: [1]
                             refId: C
                       for: 5m
                       noDataState: NoData
                       execErrState: Error
                       labels:
-                        severity: warning
+                        severity: critical
                       annotations:
-                        summary: 'Media stack container {{ "{{" }} $labels.name {{ "}}" }} has restarted more than 3 times in the last hour'
-                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerrestartloop'
+                        summary: 'Jellyfin on media-stack is not responding to Prometheus scrapes'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
+                    - uid: media-decypharr-fuse-unhealthy
+                      title: MediaDecypharrFuseUnhealthy
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'rd_fuse_mount_healthy{instance="media-stack"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 5m
+                      noDataState: NoData
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Decypharr FUSE mount /mnt/debrid is unhealthy (auto-recovery may be in progress)'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
                     - uid: rd-account-expiring-soon
                       title: RdAccountExpiringSoon
                       condition: C
