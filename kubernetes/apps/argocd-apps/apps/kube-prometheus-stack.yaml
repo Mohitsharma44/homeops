@@ -1168,7 +1168,7 @@ spec:
                             to: 0
                           datasourceUid: loki
                           model:
-                            expr: 'count_over_time({container="/jellyfin", instance="media-stack"} |~ "(?i)transcode.*error|ffmpeg.*error|encoding.*failed"[15m])'
+                            expr: 'sum(count_over_time({container="/jellyfin", instance="media-stack"} |~ "(?i)transcode.*error|ffmpeg.*error|encoding.*failed"[15m])) or vector(0)'
                             queryType: range
                             refId: A
                         - refId: B
@@ -1189,7 +1189,7 @@ spec:
                                   params: [5]
                             refId: C
                       for: 5m
-                      noDataState: OK
+                      noDataState: NoData
                       execErrState: Error
                       labels:
                         severity: warning
@@ -1206,7 +1206,7 @@ spec:
                             to: 0
                           datasourceUid: loki
                           model:
-                            expr: 'count_over_time({container="/decypharr", instance="media-stack"} |~ "(?i)429|rate.?limit|too many requests|giving up after"[15m])'
+                            expr: 'sum(count_over_time({container="/decypharr", instance="media-stack"} |~ "(?i)429|rate.?limit|too many requests|giving up after"[15m])) or vector(0)'
                             queryType: range
                             refId: A
                         - refId: B
@@ -1227,7 +1227,7 @@ spec:
                                   params: [10]
                             refId: C
                       for: 5m
-                      noDataState: OK
+                      noDataState: NoData
                       execErrState: Error
                       labels:
                         severity: warning
