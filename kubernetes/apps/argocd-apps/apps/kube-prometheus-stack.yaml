@@ -1189,7 +1189,7 @@ spec:
                                   params: [5]
                             refId: C
                       for: 5m
-                      noDataState: NoData
+                      noDataState: OK
                       execErrState: Error
                       labels:
                         severity: warning
@@ -1227,7 +1227,7 @@ spec:
                                   params: [10]
                             refId: C
                       for: 5m
-                      noDataState: NoData
+                      noDataState: OK
                       execErrState: Error
                       labels:
                         severity: warning
