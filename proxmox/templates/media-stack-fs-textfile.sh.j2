@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Filesystem metrics for Alloy textfile collector.
+# Runs via cron on media-stack LXC where the built-in filesystem
+# collector hangs on lxcfs FUSE mounts (statfs blocks indefinitely).
+# Produces node_filesystem_* metrics compatible with standard dashboards.
+#
+# Only collects the root filesystem — the LXC has hundreds of Docker
+# ZFS bind mounts that are all the same underlying dataset.
+set -euo pipefail
+
+OUTPUT="/var/lib/alloy/textfile/filesystem.prom"
+TMP="${OUTPUT}.$$"
+trap 'rm -f "$TMP"' EXIT
+
+: > "$TMP"
+
+# Get root filesystem info from the first /proc/mounts entry for /
+read -r dev mount fstype _rest <<< "$(awk '$2 == "/" {print; exit}' /proc/mounts)"
+
+if [ -n "$dev" ]; then
+  stats=$(timeout 3 stat -f -c '%b %a %s' / 2>/dev/null) || exit 0
+  read -r blocks avail bsize <<< "$stats"
+
+  size=$((blocks * bsize))
+  free=$((avail * bsize))
+
+  cat > "$TMP" <<METRICS
+node_filesystem_size_bytes{device="$dev",fstype="$fstype",mountpoint="/"} $size
+node_filesystem_avail_bytes{device="$dev",fstype="$fstype",mountpoint="/"} $free
+node_filesystem_free_bytes{device="$dev",fstype="$fstype",mountpoint="/"} $free
+METRICS
+fi
+
+# Atomic replace so Alloy never reads a partial file.
+mv "$TMP" "$OUTPUT"
+chmod 644 "$OUTPUT"

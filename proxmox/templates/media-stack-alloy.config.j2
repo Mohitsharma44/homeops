@@ -13,12 +13,19 @@ prometheus.exporter.unix "host" {
   textfile {
     directory = "/var/lib/alloy/textfile"
   }
+  // LXC: disable collectors that hang on FUSE mounts. The lxcfs overlays
+  // on /proc and /sys cause the filesystem collector's mountPointDetails()
+  // to block indefinitely in parseFilesystemLabels (reads /dev/disk/by-*),
+  // deadlocking the entire metric collection before filters can apply.
+  // btrfs is disabled for the same reason (calls mountPointDetails internally).
+  disable_collectors = ["btrfs", "filesystem"]
 }
 
 prometheus.scrape "host" {
   targets         = prometheus.exporter.unix.host.targets
   forward_to      = [prometheus.relabel.instance.receiver]
   scrape_interval = "60s"
+  scrape_timeout  = "15s"
   job_name        = "node"
 }
 
