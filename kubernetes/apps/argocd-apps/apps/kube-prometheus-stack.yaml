@@ -1160,7 +1160,7 @@ spec:
                         runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediastackdiskusage'
                     - uid: jellyfin-transcoding-errors
                       title: JellyfinTranscodingErrors
-                      condition: B
+                      condition: C
                       data:
                         - refId: A
                           relativeTimeRange:
@@ -1174,13 +1174,20 @@ spec:
                         - refId: B
                           datasourceUid: __expr__
                           model:
-                            type: threshold
+                            type: reduce
                             expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
                             conditions:
                               - evaluator:
                                   type: gt
                                   params: [5]
-                            refId: B
+                            refId: C
                       for: 5m
                       noDataState: NoData
                       execErrState: Error
@@ -1191,7 +1198,7 @@ spec:
                         runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#jellyfintranscodingerrors'
                     - uid: decypharr-rd-api-errors
                       title: DecypharrRdApiErrors
-                      condition: B
+                      condition: C
                       data:
                         - refId: A
                           relativeTimeRange:
@@ -1205,13 +1212,20 @@ spec:
                         - refId: B
                           datasourceUid: __expr__
                           model:
-                            type: threshold
+                            type: reduce
                             expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
                             conditions:
                               - evaluator:
                                   type: gt
                                   params: [10]
-                            refId: B
+                            refId: C
                       for: 5m
                       noDataState: NoData
                       execErrState: Error
