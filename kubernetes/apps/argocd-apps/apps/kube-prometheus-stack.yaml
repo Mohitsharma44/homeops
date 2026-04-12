@@ -51,6 +51,14 @@ spec:
           thanosServiceMonitor:
             enabled: true
         grafana:
+          # Use SOPS-encrypted Secret (applied by Flux from
+          # kubernetes/infrastructure/configs/grafana-admin-secret.yaml)
+          # to prevent Helm from regenerating a random adminPassword on
+          # each sync (which would drift from Grafana's DB and break login).
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
           ingress:
             enabled: true
             ingressClassName: nginx

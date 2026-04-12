@@ -11,6 +11,7 @@ resources:
   - thanos-objstore-secret.yaml
   - monitoring-basic-auth-secret.yaml
   - alertmanager-slack-secret.yaml
+  - grafana-admin-secret.yaml
   - monitoring-ingress.yaml
   - pangolin-ns.yaml
   - newt-credentials-secret.yaml
