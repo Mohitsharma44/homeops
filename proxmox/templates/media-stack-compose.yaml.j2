@@ -29,6 +29,16 @@ services:
     networks:
       - media-net
     restart: unless-stopped
+    # FUSE mount healthcheck — all debrid-dependent services wait for this.
+    # Decypharr runs rclone internally which mounts the FUSE filesystem at
+    # /mnt/debrid. Without this check, downstream containers start before
+    # the mount propagates and can't see debrid files.
+    healthcheck:
+      test: ["CMD", "ls", "/mnt/debrid/__all__/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -52,7 +62,8 @@ services:
     networks:
       - media-net
     depends_on:
-      - decypharr
+      decypharr:
+        condition: service_healthy
     restart: unless-stopped
 
   prowlarr:
@@ -87,8 +98,10 @@ services:
     networks:
       - media-net
     depends_on:
-      - decypharr
-      - prowlarr
+      decypharr:
+        condition: service_healthy
+      prowlarr:
+        condition: service_started
     restart: unless-stopped
 
   sonarr:
@@ -108,8 +121,10 @@ services:
     networks:
       - media-net
     depends_on:
-      - decypharr
-      - prowlarr
+      decypharr:
+        condition: service_healthy
+      prowlarr:
+        condition: service_started
     restart: unless-stopped
 
   bazarr:
@@ -131,8 +146,12 @@ services:
     networks:
       - media-net
     depends_on:
-      - radarr
-      - sonarr
+      decypharr:
+        condition: service_healthy
+      radarr:
+        condition: service_started
+      sonarr:
+        condition: service_started
     restart: unless-stopped
 
   jellyseerr:
@@ -192,7 +211,10 @@ services:
     networks:
       - media-net
     depends_on:
-      - jellyfin
+      decypharr:
+        condition: service_healthy
+      jellyfin:
+        condition: service_started
     restart: unless-stopped
 
   # ── FlareSolverr (Cloudflare bypass for Prowlarr) ──
@@ -267,6 +289,45 @@ services:
       - sonarr
       - prowlarr
       - bazarr
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Zilean (debrid hash indexer for Prowlarr) ───────
+  zilean:
+    image: ipromknight/zilean:latest
+    container_name: zilean
+    ports:
+      - "8181:8181"
+    environment:
+      - Zilean__Database__ConnectionString=Host=zilean-db;Port=5432;Database=zilean;Username=zilean;Password=${ZILEAN_DB_PASSWORD}
+      - Zilean__Dmm__MinimumScoreMatch=0.85
+      - TZ=America/Vancouver
+    networks:
+      - media-net
+    depends_on:
+      - zilean-db
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  zilean-db:
+    image: postgres:16-alpine
+    container_name: zilean-db
+    environment:
+      - POSTGRES_USER=zilean
+      - POSTGRES_PASSWORD=${ZILEAN_DB_PASSWORD}
+      - POSTGRES_DB=zilean
+    volumes:
+      - /opt/media-stack/config/zilean-db:/var/lib/postgresql/data
+    networks:
+      - media-net
     restart: unless-stopped
     logging:
       driver: json-file
