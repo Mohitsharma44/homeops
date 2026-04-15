@@ -900,7 +900,7 @@ spec:
                                   params: [1]
                             refId: C
                       for: 5m
-                      noDataState: NoData
+                      noDataState: Alerting
                       execErrState: Error
                       labels:
                         severity: critical
@@ -937,12 +937,52 @@ spec:
                                   params: [1]
                             refId: C
                       for: 5m
-                      noDataState: NoData
+                      noDataState: Alerting
                       execErrState: Error
                       labels:
                         severity: critical
                       annotations:
                         summary: 'Jellyfin on media-stack is not responding to Prometheus scrapes'
+                        runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
+                    # Host-level liveness canary: fires when Alloy on media-stack
+                    # stops remote-writing entirely (LXC down, OOM, network loss).
+                    # One alert replaces the NoData-brittleness of per-service rules.
+                    - uid: media-stack-host-absent
+                      title: MediaStackHostAbsent
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'absent(up{instance="media-stack"})'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: Alerting
+                      execErrState: Error
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'media-stack host is not reporting any metrics — LXC likely down'
                         runbook_url: 'https://github.com/mohitsharma44/homeops/blob/main/docs/runbooks/media-stack-alerts.md#mediacontainerdown'
                     - uid: media-decypharr-fuse-unhealthy
                       title: MediaDecypharrFuseUnhealthy
