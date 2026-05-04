@@ -47,10 +47,34 @@ executions = [
   { execution.type = "DeployStack", execution.params.stack = "traefik" },
 ]
 
+# Komodo v1.19.5 BatchDeployStackIfChanged has only a `pattern` field — no
+# `exclude_pattern`. Patterns are name-glob (with `*`/`?`/`[...]`) or regex
+# (delimited by `\...\`); there is no negation operator. Upstream issues
+# #44 and #954 track adding exclusion support.
+#
+# So we enumerate the deploy-eligible stacks. Stacks excluded by omission:
+#   komodo-core            - Komodo cannot redeploy itself (kills its own process)
+#   aegis-pangolin         - severs the WireGuard tunnel Komodo uses to reach VPS
+#   aegis-newt             - tunnel client; restart cuts VPS management path
+#   aegis-periphery        - Komodo agent on VPS; restart makes VPS unreachable
+#   aegis-pangolin-client  - has order dependency on aegis-pangolin; deploy via
+#                            deploy-vps-infra procedure instead
+#
+# These five must be deployed manually via `km execute deploy-stack <name>`
+# or via the ordered `deploy-vps-infra` procedure.
 [[procedure.config.stage]]
 name = "Applications"
 executions = [
-  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = "*", execution.params.exclude_pattern = "komodo-core|aegis-pangolin|aegis-newt|aegis-periphery|aegis-pangolin-client" },
+  { execution.type = "BatchDeployStackIfChanged", execution.params.pattern = """
+*-alloy
+aegis-gateway
+aegis-identity
+frigate
+newt
+omni
+seaweedfs
+vaultwarden
+""" },
 ]
 
 [[procedure]]
