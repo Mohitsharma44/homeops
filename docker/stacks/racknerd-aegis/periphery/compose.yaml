@@ -8,6 +8,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /etc/sops/age:/etc/sops/age:ro
+      # Mount host /etc/komodo so periphery's git pulls / file writes are
+      # visible to the host docker daemon's bind-mount resolution. Without
+      # this, periphery has its own /etc/komodo inside the container and
+      # bind-mounted runtime files (e.g., crowdsec scripts, traefik dynamic
+      # configs) drift away from git on the host filesystem. Matches the
+      # mount pattern used on all other periphery hosts (server04, nvr,
+      # kasm, omni, seaweedfs).
+      - /etc/komodo:/etc/komodo
     environment:
       SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
     logging:
