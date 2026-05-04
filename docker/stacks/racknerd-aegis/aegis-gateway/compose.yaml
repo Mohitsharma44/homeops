@@ -1,6 +1,6 @@
 services:
   crowdsec:
-    image: crowdsecurity/crowdsec:latest
+    image: crowdsecurity/crowdsec:v1.7.7
     container_name: aegis-crowdsec
     restart: unless-stopped
     networks:
@@ -31,7 +31,7 @@ services:
         max-file: "3"
 
   traefik:
-    image: traefik:v3.6.9
+    image: traefik:v3.6.15
     container_name: aegis-traefik
     restart: unless-stopped
     depends_on:
@@ -62,7 +62,7 @@ services:
       - --accesslog.filepath=/var/log/traefik/access.log
       - --accesslog.format=json
       - --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
-      - --experimental.plugins.crowdsec-bouncer.version=v1.3.5
+      - --experimental.plugins.crowdsec-bouncer.version=v1.6.0
     ports:
       - "80:80"
       - "443:443"
