@@ -1,6 +1,6 @@
 services:
   pangolin-cli:
-    image: fosrl/pangolin-cli:0.3.3
+    image: fosrl/pangolin-cli:0.8.0
     container_name: pangolin-client-obs
     restart: unless-stopped
     network_mode: host
