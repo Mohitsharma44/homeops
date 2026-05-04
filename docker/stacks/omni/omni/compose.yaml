@@ -1,7 +1,7 @@
 services:
   omni:
     container_name: omni
-    image: ghcr.io/siderolabs/omni:v1.5.8
+    image: ghcr.io/siderolabs/omni:v1.7.1
     restart: always
     network_mode: host
     cap_add:
@@ -36,6 +36,8 @@ services:
       --siderolink-wireguard-advertised-addr=${SIDEROLINK_WIREGUARD_ADVERTISED_ADDR}
       --enable-break-glass-configs
       --initial-users=${INITIAL_USER_EMAILS}
+      --eula-accept-name=${EULA_ACCEPT_NAME}
+      --eula-accept-email=${EULA_ACCEPT_EMAIL}
       ${AUTH}
     logging:
       driver: "json-file"

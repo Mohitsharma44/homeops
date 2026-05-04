@@ -8,6 +8,10 @@ file_paths = ["docker/stacks/omni/omni/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 auto_update = true
+environment = """
+EULA_ACCEPT_NAME=Mohit Sharma
+EULA_ACCEPT_EMAIL=mohitsharma44@gmail.com
+"""
 [stack.config.pre_deploy]
 path = "docker/stacks/omni/omni"
 command = "sops-decrypt.sh"
