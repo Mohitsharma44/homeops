@@ -8,6 +8,9 @@ file_paths = ["docker/stacks/komodo/core/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 # auto_update intentionally disabled — Komodo cannot redeploy itself safely
+environment = """
+KOMODO_VERSION = [[KOMODO_VERSION]]
+"""
 [stack.config.pre_deploy]
 path = "docker/stacks/komodo/core"
 command = "sops-decrypt.sh"

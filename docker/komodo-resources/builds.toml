@@ -20,3 +20,6 @@ image_registry.type = "Standard"
 image_registry.params.domain = "docker.io"
 image_registry.params.account = "mohitsharma44"
 image_name = "mohitsharma44/komodo-periphery-sops"
+build_args = """
+PERIPHERY_TAG = [[KOMODO_VERSION]]
+"""

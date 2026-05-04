@@ -48,7 +48,7 @@ services:
         max-file: "3"
 
   core:
-    image: ghcr.io/moghtech/komodo-core:1.19.5
+    image: ghcr.io/moghtech/komodo-core:${KOMODO_VERSION}
     labels:
       komodo.skip:
     restart: unless-stopped

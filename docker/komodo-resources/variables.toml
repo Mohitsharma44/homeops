@@ -9,3 +9,7 @@ value = "sharmamohit.com"
 [[variable]]
 name = "TZ"
 value = "America/Vancouver"
+
+[[variable]]
+name = "KOMODO_VERSION"
+value = "1.19.5"
