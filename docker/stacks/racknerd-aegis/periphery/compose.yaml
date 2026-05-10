@@ -1,7 +1,8 @@
 services:
   periphery:
-    image: mohitsharma44/komodo-periphery-sops:latest
+    image: mohitsharma44/komodo-periphery-sops:2.1.2
     container_name: periphery
+    init: true
     restart: unless-stopped
     networks:
       - newt-periphery
@@ -16,8 +17,10 @@ services:
       # mount pattern used on all other periphery hosts (server04, nvr,
       # kasm, omni, seaweedfs).
       - /etc/komodo:/etc/komodo
+      - keys:/config/keys
     environment:
       SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
+      PERIPHERY_CORE_PUBLIC_KEYS: "MCowBQYDK2VuAyEASxE4sTyH5SwIWFNIeiXlVc7sp6yk1LDyNHw3BF5PhRQ="
     logging:
       driver: "json-file"
       options:
@@ -27,3 +30,6 @@ services:
 networks:
   newt-periphery:
     external: true
+
+volumes:
+  keys:
