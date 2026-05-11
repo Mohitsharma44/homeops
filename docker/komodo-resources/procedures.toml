@@ -16,7 +16,7 @@ executions = [
 name = "Rebuild Periphery Image"
 description = "Rebuild custom periphery with latest upstream base image"
 tags = ["system", "periphery"]
-# config.schedule = "Every day at 04:00"  # DISABLED for Phase 4 v2 upgrade campaign — restore in Task 23
+config.schedule = "Every day at 04:00"
 
 [[procedure.config.stage]]
 name = "Build"
@@ -28,7 +28,7 @@ executions = [
 name = "Global Auto Update"
 description = "Auto-update stacks and deployments"
 tags = ["system"]
-# config.schedule = "Every day at 05:00"  # DISABLED for Phase 4 v2 upgrade campaign — restore in Task 23
+config.schedule = "Every day at 05:00"
 
 [[procedure.config.stage]]
 name = "Update All"
