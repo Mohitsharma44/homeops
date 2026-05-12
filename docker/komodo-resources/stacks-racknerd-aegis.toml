@@ -50,6 +50,9 @@ file_paths = ["docker/stacks/racknerd-aegis/periphery/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 # auto_update intentionally disabled — Periphery is the Komodo agent on VPS; restarting it makes VPS unreachable
+[stack.config.pre_deploy]
+path = "docker/stacks/racknerd-aegis/periphery"
+command = "sops-decrypt.sh"
 
 [[stack]]
 name = "aegis-newt"

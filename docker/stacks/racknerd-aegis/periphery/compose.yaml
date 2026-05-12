@@ -18,9 +18,12 @@ services:
       # kasm, omni, seaweedfs).
       - /etc/komodo:/etc/komodo
       - keys:/config/keys
+    env_file: .env
     environment:
       SOPS_AGE_KEY_FILE: /etc/sops/age/keys.txt
       PERIPHERY_CORE_PUBLIC_KEYS: "MCowBQYDK2VuAyEASxE4sTyH5SwIWFNIeiXlVc7sp6yk1LDyNHw3BF5PhRQ="
+      PERIPHERY_CORE_ADDRESS: "http://komodo.private.sharmamohit.com:9120"
+      PERIPHERY_CONNECT_AS: "racknerd-aegis"
     logging:
       driver: "json-file"
       options:
