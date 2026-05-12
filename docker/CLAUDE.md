@@ -28,7 +28,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
 | server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden |
 | seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
-| racknerd-aegis | 23.94.73.98 | root@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
+| racknerd-aegis | <VPS_PUBLIC_IP> | <vps-user>@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
 
 **Note**: server04 monitoring uses a systemd Alloy service (not a Komodo-managed Docker stack). See `docs/hardware-monitoring-plan.md` for details.
 
@@ -36,7 +36,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 - **UI**: https://komodo.sharmamohit.com
 - **API**: http://komodo.sharmamohit.com:9120 (HTTP, not HTTPS)
 - **CLI**: `km`
-- **Periphery**: port 8120 on each host (TLS)
+- **Periphery**: v2.1.2, all 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
 
 ## Secrets (SOPS + age)
 
@@ -82,7 +82,7 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
   - VPS tunnel stacks: `km execute run-procedure deploy-vps-infra` (runs in safe order)
 
 - **deploy-vps-infra failure mode**: After `aegis-pangolin` redeploys (~2min), Komodo marks the VPS server unreachable while the WireGuard tunnel is down. The procedure includes a 30s sleep after the Pangolin stage to let the tunnel recover before proceeding. Even with the sleep, `aegis-newt` deploys may show as "failed" (connection reset) while the container itself comes up fine — always verify with `ssh hs docker ps` rather than relying solely on Komodo's success status.
-- **VPS Pangolin connectivity**: Komodo reaches VPS Periphery via Pangolin private resource tunnel (`periphery.private.sharmamohit.com:8120`). A Machine Client on komodo (`/opt/pangolin-client/`) provides the WireGuard route. If the tunnel is down, use SSH (`ssh hs`) as the emergency backdoor.
+- **VPS Pangolin connectivity**: VPS Periphery dials Komodo Core over a Pangolin private resource (`komodo.private.sharmamohit.com:9120` → `192.168.11.200:9120`), routed through the `racknerd-aegis-obs` Machine Client on the VPS. Split DNS for `*.private.sharmamohit.com` is configured by the `pangolin-dns.service` systemd unit on the VPS (and on the komodo host for symmetric setups). If the tunnel is down, Periphery cannot reach Core — use SSH (`ssh hs`) as the emergency backdoor.
 - **VPS network segmentation**: VPS uses multi-network isolation. Only containers needing WAN access touch `traefik-public` or `pangolin-internal`. Periphery is isolated on `newt-periphery` only (no ports published). LLDAP is on `identity-internal` only (PocketID bridges both networks).
 - **Komodo file_paths**: Only the first entry is used as the compose file. Komodo does NOT support Docker Compose file merge (multiple `-f` flags). To customize a shared stack for one host, create a standalone copy instead of an override.
 - **VPS Alloy override**: `racknerd-aegis-alloy` uses a standalone compose at `stacks/racknerd-aegis/alloy-override/compose.yaml` (not the shared one) to add CrowdSec metrics scraping. This is a full copy of the shared config — **keep it in sync** when the shared Alloy config changes. Its `env_file` points to `../../shared/alloy/.env` via relative path.

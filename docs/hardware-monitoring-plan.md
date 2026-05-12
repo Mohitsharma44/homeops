@@ -1,5 +1,15 @@
 # Hardware Health Monitoring & Alerting Plan
 
+> **Status banner (2026-05-12)** — All phases are DONE. The host inventory below shifted after the **2026-03-14 TrueNAS → Proxmox migration** (see `docs/truenas-to-proxmox-migration-log.md`):
+>
+> | Original plan host | Status today | Replacement |
+> |---|---|---|
+> | `pve` (Proxmox, 192.168.11.13) | Decommissioned from monitoring (host still on network, no metrics for 7d+) | `pve03` (Proxmox, 192.168.11.12) — provisioned by `proxmox/site.yml` |
+> | `truenas` (TrueNAS SCALE, 192.168.11.15) | Decommissioned (TrueNAS replaced by Proxmox on the same hardware) | `r720xd` (Proxmox, 192.168.11.15) — same hardware, now PVE |
+> | `server04` (Ubuntu 22.04, 192.168.11.17) | Unchanged | — |
+>
+> Also added since the original plan: `media-stack` LXC (192.168.11.40) runs systemd Alloy too, provisioned by `proxmox/media-stack.yml`. The 3-host pve/truenas/server04 narrative below is preserved as historical context. **Current Alloy/smartctl operational reference**: see the "Listen Address Summary" table in Phase 2 (updated) and `docs/monitoring.md`.
+
 ## Context
 
 Three homelab servers (pve, truenas, server04) have no hardware health monitoring beyond basic node_exporter metrics. PVE has previously shown SATA/HDD issues. Alertmanager is deployed on K8s but has zero receivers — alerts fire into the void. This plan adds SMART disk monitoring, IPMI sensor collection, ZFS pool health, alert routing to Home Assistant, and PrometheusRules for hardware failure detection.
@@ -631,11 +641,21 @@ All binaries, configs, systemd units, and the init script live on `/mnt/ssdpool1
 
 All smartctl_exporter instances bind to `127.0.0.1:9633` — Alloy always runs on the same host.
 
+**Current state (post-migration, 2026-05-12):**
+
 | Host | smartctl_exporter | Binary path | Alloy | Notes |
 |------|------------------|-------------|-------|-------|
-| pve | `127.0.0.1:9633` (systemd, v0.13.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 2 SSDs, auto-scan. Host metrics + SMART + journal |
-| truenas | `127.0.0.1:9633` (systemd, v0.13.0) | `/mnt/ssdpool1/admin/smartctl-exporter/` | Systemd (manual binary, v1.14.0 at `/mnt/ssdpool1/admin/alloy/`) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal. All files on persistent ZFS dataset |
-| server04 | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 5 drives (4 SAS via `";cciss,0"` + 1 SSD). Host metrics + SMART + cAdvisor + Docker logs + journal. Replaces `server04-alloy` Komodo stack |
+| `server04` | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 5 drives (4 SAS via `cciss,N` + 1 SSD). Host metrics + SMART + cAdvisor + Docker logs + journal. Replaces former `server04-alloy` Komodo stack. Unchanged from original plan. |
+| `r720xd` | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package, deployed by `proxmox/site.yml`) | 14 drives (LSI SAS2308 IT mode), auto-scan. Replaced the TrueNAS-era setup (no more `/mnt/ssdpool1/admin/` ZFS dataset or Post Init Script — Proxmox uses standard `/etc/...` paths). |
+| `pve03` | `127.0.0.1:9633` (systemd, v0.14.0) | Systemd (APT package, deployed by `proxmox/site.yml`) | — | 1 drive. Newer Proxmox node added after the migration; replaces the old `pve` at 192.168.11.13 which is decommissioned from monitoring. |
+| `media-stack` (LXC) | n/a | n/a | Systemd (APT package, deployed by `proxmox/media-stack.yml`) | LXC has no direct disk access; relies on the underlying Proxmox host (`r720xd`) for SMART. Alloy runs to ship container metrics, *arr metrics, Jellyfin metrics, and journal logs. |
+
+**Original plan reference (historical, pre-migration):**
+
+| Host | smartctl_exporter | Binary path | Alloy | Notes |
+|------|------------------|-------------|-------|-------|
+| ~~pve~~ (decom) | `127.0.0.1:9633` (systemd, v0.13.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 2 SSDs, auto-scan. Host metrics + SMART + journal |
+| ~~truenas~~ (replaced by r720xd) | `127.0.0.1:9633` (systemd, v0.13.0) | `/mnt/ssdpool1/admin/smartctl-exporter/` | Systemd (manual binary, v1.14.0 at `/mnt/ssdpool1/admin/alloy/`) | 14 drives (LSI IT mode), auto-scan. `ProtectHome=false`. Host metrics + SMART + journal. All files on persistent ZFS dataset |
 
 ---
 
@@ -755,21 +775,21 @@ If credentials need to be rotated:
 
 1. **Phase 1**: Trigger test alert -> confirm phone push notification arrives on HA AND message appears in `#homelab-alerts` Slack channel. Verify Watchdog alert does NOT reach HA or Slack.
 2. **Phase 2 (metrics)**: `curl -s http://127.0.0.1:9633/metrics | grep smartctl_device_smart_status` on each host. On server04, verify 5 devices appear (4 cciss + 1 SSD `/dev/sde`)
-3. **Phase 2 (logs)**: Query Loki for `{job="journal", instance="pve"}`, `{instance="truenas"}`, and `{instance="server04"}` — verify journal entries are flowing. On server04, also verify Docker container logs are still captured: `{container="/traefik", instance="server04"}`.
+3. **Phase 2 (logs)**: Query Loki for `{job="journal", instance="r720xd"}`, `{instance="pve03"}`, and `{instance="server04"}` — verify journal entries are flowing. On server04, also verify Docker container logs are still captured: `{container="/traefik", instance="server04"}`. (Historical: original plan also covered `pve` and `truenas`, both decommissioned 2026-03-14.)
 4. **Phase 4**: Check Alertmanager UI — no false positives, rules evaluating correctly
 
 ## Risks
 
 | Risk | Mitigation |
 |------|------------|
-| smartctl_exporter/Alloy wiped by TrueNAS major upgrade | Binaries, configs, and systemd units now persist on `/mnt/ssdpool1/admin/` (ZFS dataset). A Post Init Script (`/mnt/ssdpool1/admin/init-monitoring.sh`) re-links systemd units and starts services on boot. Register in TrueNAS UI: System > Advanced > Init/Shutdown Scripts (Type: Post Init). If init script itself is missing, the ZFS dataset survived — just re-register it |
-| Alloy on pve wiped by Proxmox major upgrade | Same alert-based detection. APT packages generally survive Proxmox upgrades since they use standard Debian packaging |
+| ~~smartctl_exporter/Alloy wiped by TrueNAS major upgrade~~ | Obsolete — TrueNAS was retired 2026-03-14 when the R720XD was migrated to Proxmox. Replacement host `r720xd` uses standard Debian/APT install paths, no Post Init Script needed. |
+| Alloy on r720xd / pve03 wiped by Proxmox major upgrade | APT packages generally survive Proxmox upgrades since they use standard Debian packaging. The `proxmox/site.yml` Ansible playbook is idempotent — re-run to restore if needed. |
 | Alert flood on initial deploy | `group_wait: 3m`, `repeat_interval: 6h` (warnings) / `1h` (critical) |
 | HP Smart Array hides new drives | If drives are added/replaced, update `cciss,N` flags in systemd service and restart |
 | HA down = no alerts | Slack as secondary receiver — all alerts go to both HA and Slack |
 | Total monitoring failure (Prometheus/Alloy down) | Watchdog alert + dead man's switch service catches silent failures |
 | ZFS pool degraded but SMART OK | Phase 5 adds ZFS pool state monitoring (stretch goal) |
-| Alloy credentials on pve/truenas/server04 not SOPS-managed | Env file with mode 0600. Credentials are same as Docker Alloy instances. Rotation procedure documented in manual steps |
+| Alloy credentials on server04 / r720xd / pve03 not SOPS-managed (host-side) | server04 keeps `/etc/alloy/env` (mode 0600, manual). r720xd + pve03 are managed by `proxmox/site.yml` — credentials sourced from `proxmox/group_vars/all/secrets.sops.yml` (SOPS-encrypted) and templated into `/etc/default/alloy-env` at playbook run. Rotate by editing the SOPS file and re-running the playbook. |
 | server04 Docker Alloy removal is a migration | Deploy systemd Alloy first, verify metrics/logs flowing, then undeploy Docker Alloy. Brief gap possible during cutover |
 
 ## Known Limitations

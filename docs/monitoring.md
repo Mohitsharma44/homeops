@@ -2,7 +2,7 @@
 
 ## Overview
 
-Full metrics/logs/traces observability stack deployed in the `monitoring` namespace via ArgoCD, with long-term storage on SeaweedFS S3 (TrueNAS).
+Full metrics/logs/traces observability stack deployed in the `monitoring` namespace via ArgoCD, with long-term storage on a SeaweedFS S3 VM hosted on the `r720xd` Proxmox node.
 
 ## Components
 
@@ -133,7 +133,7 @@ Grafana
 ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─│─ ─ ─  LAN (192.168.11.0/24) ─ ─ ─ ─ ─ ─ ─
      │                │         │
 ┌────▼────────────────▼─────────▼─────────────────────────────────────────────┐
-│  TrueNAS (VM) ── SeaweedFS S3  ──  seaweedfs.sharmamohit.com:8333          │
+│  r720xd (Proxmox) ── SeaweedFS VM ── S3 :8333 ── seaweedfs.sharmamohit.com │
 │                                                                             │
 │  ┌──────────────┐  ┌──────────┐  ┌───────────┐  ┌───────────────┐          │
 │  │thanos-metrics│  │loki-chunks│  │loki-ruler │  │ tempo-traces  │          │
@@ -203,7 +203,7 @@ In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all infrastructure
 Data is pushed to the K8s observability stack via the external write endpoints below. All infrastructure host metrics include `source="infra"` and `instance=<hostname>` labels for filtering in Grafana.
 
 **Komodo-managed Alloy** (5 LAN hosts + VPS): `docker/stacks/shared/alloy/compose.yaml`, credentials in `docker/stacks/shared/alloy/.sops.env`
-**Systemd Alloy** (server04, pve, truenas): These hosts run smartctl_exporter and ship journal logs. server04 and pve use `/etc/alloy/config.alloy` with credentials in `/etc/alloy/env`. truenas uses persistent ZFS storage at `/mnt/ssdpool1/admin/` (Alloy v1.14.0) with a Post Init Script that survives OS upgrades — see `docs/hardware-monitoring-plan.md` for details.
+**Systemd Alloy** (server04, r720xd, pve03): These hosts run smartctl_exporter + Alloy on the host. server04 is bare metal (Ubuntu 22.04); r720xd and pve03 are Proxmox nodes provisioned by the `proxmox/site.yml` Ansible playbook. All three use `/etc/alloy/config.alloy` with credentials in `/etc/default/alloy-env`. The historical TrueNAS arrangement (persistent ZFS storage at `/mnt/ssdpool1/admin/`, Post Init Script) was retired when the R720XD was migrated to Proxmox on 2026-03-14 — Alloy now lives in standard `/etc/...` locations.
 
 ## Media Stack Monitoring (LXC 400)
 
@@ -291,11 +291,12 @@ curl -u alloy:<password> -H "X-Scope-OrgID: homelab" -X POST https://loki.sharma
 curl -X POST https://prometheus.sharmamohit.com/api/v1/write
 ```
 
-## S3 Backend (SeaweedFS on TrueNAS)
+## S3 Backend (SeaweedFS VM on r720xd)
 
-SeaweedFS runs inside a VM on TrueNAS, providing S3-compatible object storage over the LAN for long-term observability data.
+SeaweedFS runs inside a Proxmox VM on the `r720xd` node (192.168.11.15), providing S3-compatible object storage over the LAN for long-term observability data. (Originally a TrueNAS VM; migrated to Proxmox on 2026-03-14, see `docs/truenas-to-proxmox-migration-log.md`.)
 
-- **Host**: TrueNAS (VM running SeaweedFS)
+- **Hypervisor**: r720xd (Proxmox VE)
+- **Guest**: seaweedfs (Ubuntu 25.10, 192.168.11.133)
 - **Endpoint**: http://seaweedfs.sharmamohit.com:8333
 - **IAM Identity**: observability (Read/Write/List)
 - **Buckets**: thanos-metrics, loki-chunks, loki-ruler, tempo-traces

@@ -352,7 +352,7 @@ spec:
                             to: 0
                           datasourceUid: thanos
                           model:
-                            expr: '(1 - node_memory_MemAvailable_bytes{instance!="truenas",source="infra"} / node_memory_MemTotal_bytes{instance!="truenas",source="infra"})'
+                            expr: '(1 - node_memory_MemAvailable_bytes{instance!="r720xd",source="infra"} / node_memory_MemTotal_bytes{instance!="r720xd",source="infra"})'
                             refId: A
                         - refId: B
                           datasourceUid: __expr__
@@ -1376,8 +1376,8 @@ spec:
                       summary: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} will fill within 24 hours"
                   - alert: HighMemoryUsage
                     expr: |
-                      (1 - node_memory_MemAvailable_bytes{instance!="truenas",source="infra"}
-                      / node_memory_MemTotal_bytes{instance!="truenas",source="infra"}) > 0.90
+                      (1 - node_memory_MemAvailable_bytes{instance!="r720xd",source="infra"}
+                      / node_memory_MemTotal_bytes{instance!="r720xd",source="infra"}) > 0.90
                     for: 15m
                     labels:
                       severity: warning

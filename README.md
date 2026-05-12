@@ -113,7 +113,7 @@ Distributed storage (block, filesystem, object) via Rook-Ceph. See [docs/ceph.md
 
 ## Docker (Komodo GitOps)
 
-Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource Sync. See [docker/README.md](docker/README.md) for full documentation.
+Manages Docker containers across 7 hosts via [Komodo](https://komo.do) Resource Sync. See [docker/README.md](docker/README.md) for full documentation.
 
 ### Hosts
 
@@ -125,6 +125,7 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | **omni** | K8s Management | Siderolabs Omni, Alloy |
 | **server04** | App Server + Build | Traefik, Vaultwarden, Alloy |
 | **seaweedfs** | Object Storage | SeaweedFS (5 containers), Alloy |
+| **racknerd-aegis** | VPS Gateway | Pangolin + Gerbil, public Traefik + CrowdSec, LLDAP + PocketID, Periphery (Komodo-managed), Alloy |
 
 ### How It Works
 
@@ -170,7 +171,7 @@ Full metrics, logs, and traces stack. See [docs/monitoring.md](docs/monitoring.m
 
 ### Docker Host Observability (Komodo)
 
-Grafana Alloy runs on all 6 Docker hosts, collecting host metrics (node_exporter), container metrics (cAdvisor), and container logs. Data is pushed to the K8s Prometheus and Loki instances via authenticated external write endpoints.
+Grafana Alloy runs on all 7 Docker hosts, collecting host metrics (node_exporter), container metrics (cAdvisor), and container logs. Data is pushed to the K8s Prometheus and Loki instances via authenticated external write endpoints.
 
 ```
 Docker hosts (Alloy)  ──metrics──→  prometheus.sharmamohit.com  ──→  Prometheus  ──→  Thanos  ──→  Grafana
@@ -268,8 +269,8 @@ flux get kustomizations --watch
 
 See [docker/README.md](docker/README.md) for full setup. In short:
 
-1. Komodo Core deployed as self-managed stack; systemd Periphery on komodo host
-2. Custom periphery image (with SOPS + age) deployed on all 6 hosts
+1. Komodo Core deployed as self-managed stack; systemd Periphery on komodo host. All Peripheries run in outbound mode (dial Core, PKI keypair auth).
+2. Custom periphery image (with SOPS + age) deployed on the 5 LAN docker hosts + the VPS
 3. Age private key distributed to `/etc/sops/age/keys.txt` on each host
 4. ResourceSync created pointing at `docker/komodo-resources/`
 5. Stacks deployed via `km execute deploy-stack <name>` or Komodo UI

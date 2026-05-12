@@ -1,6 +1,6 @@
 # Docker Infrastructure — Komodo GitOps
 
-Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource Sync. All resource definitions, compose files, and encrypted secrets live in this directory and are synced to Komodo via a single ResourceSync pointing at `docker/komodo-resources/`.
+Manages Docker containers across 7 hosts (6 LAN + 1 VPS) via [Komodo](https://komo.do) Resource Sync. All resource definitions, compose files, and encrypted secrets live in this directory and are synced to Komodo via a single ResourceSync pointing at `docker/komodo-resources/`.
 
 ## Architecture
 
@@ -15,16 +15,21 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 │  Komodo Core (komodo host, port 9120)                                    │
 │  - Parses TOML declarations → creates/updates/deletes resources          │
 │  - Orchestrates deployments via Periphery agents                         │
-└──────────┬───────────────────────────────────────────────────────────────┘
-           │  gRPC (port 8120, TLS)
-    ┌──────┼──────┬──────┬──────┬──────┐
-    ▼      ▼      ▼      ▼      ▼      ▼
- komodo   nvr   kasm   omni  server04  seaweedfs
- (Core)                        (Build
-  systemd Periphery agents on each host:  Server)
-  - Runs pre_deploy hooks (sops-decrypt.sh)
-  - Executes docker compose up/down
-  - Reports container health back to Core
+└──────────▲───────────────────────────────────────────────────────────────┘
+           │  Periphery dials in (outbound mode, PKI keypair, websocket :9120)
+    ┌──────┴──────┬──────┬──────┬──────┬──────┬───────────────────┐
+    │             │      │      │      │      │                   │
+ komodo         nvr    kasm   omni  server04 seaweedfs       racknerd-aegis
+ (Core +                            (Build                       (VPS, dials
+  systemd                             Server)                     via Pangolin
+  Periphery)                                                      tunnel)
+
+  All Peripheries (v2.1.2):
+  - Dial Komodo Core (no inbound ports needed)
+  - PKI keypair auth (`/config/keys` volume, per-periphery key)
+  - Run pre_deploy hooks (sops-decrypt.sh)
+  - Execute docker compose up/down
+  - Stream container health back over the same websocket
 ```
 
 ## Hosts
@@ -37,11 +42,13 @@ Manages Docker containers across 6 hosts via [Komodo](https://komo.do) Resource 
 | **omni** | 192.168.11.30 | `root@omni` | Talos K8s management | omni, omni-alloy |
 | **server04** | 192.168.11.17 | `mohitsharma44@server04` | App server + build server | traefik, vaultwarden |
 | **seaweedfs** | 192.168.11.133 | `mohitsharma44@seaweedfs` | Object storage | seaweedfs, seaweedfs-alloy |
+| **racknerd-aegis** | <VPS_PUBLIC_IP> | `<vps-user>@hs` | VPS gateway (Pangolin + Traefik + identity) | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
 
 **Notes:**
 - KASM Workspaces is installer-managed and NOT managed by Komodo. Only Newt (tunnel agent) is managed on that host.
 - server04 doubles as the Docker build server for custom images.
 - komodo runs inside a Proxmox LXC container (ID 200).
+- VPS Periphery dials Core through a Pangolin private resource (`komodo.private.sharmamohit.com:9120`) — Core has no public ingress. Split DNS for the VPS is configured by the `pangolin-dns.service` systemd unit on the host.
 
 For detailed per-host information (OS, containers, hardware, quirks), see [docs/docker-hosts.md](/docs/docker-hosts.md).
 
@@ -52,6 +59,7 @@ For detailed per-host information (OS, containers, hardware, quirks), see [docs/
 | komodo | systemd service — `/etc/komodo/periphery.config.toml` |
 | nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
 | server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
+| racknerd-aegis | Komodo-managed stack (`aegis-periphery`) — isolated on `newt-periphery` network |
 
 ## Directory Structure
 
@@ -59,7 +67,7 @@ For detailed per-host information (OS, containers, hardware, quirks), see [docs/
 docker/
 ├── komodo-resources/           # TOML resource declarations (synced by Komodo)
 │   ├── sync.toml               # ResourceSync self-definition
-│   ├── servers.toml            # 6 host/server definitions
+│   ├── servers.toml            # 7 host/server definitions
 │   ├── variables.toml          # Non-secret variables
 │   ├── builds.toml             # Custom periphery image build + builder
 │   ├── procedures.toml         # Scheduled jobs (backup, rebuild, auto-update)
@@ -68,16 +76,19 @@ docker/
 │   ├── stacks-kasm.toml        # Stacks for kasm host
 │   ├── stacks-omni.toml        # Stacks for omni host
 │   ├── stacks-server04.toml    # Stacks for server04 host
-│   └── stacks-seaweedfs.toml   # Stacks for seaweedfs host
+│   ├── stacks-seaweedfs.toml   # Stacks for seaweedfs host
+│   └── stacks-racknerd-aegis.toml  # Stacks for the VPS
 ├── stacks/                     # Compose files + encrypted secrets
-│   ├── shared/alloy/           # Shared Alloy monitoring template (all hosts)
+│   ├── shared/alloy/           # Shared Alloy monitoring template (LAN hosts)
 │   ├── komodo/core/            # Komodo Core (self-managed stack)
 │   ├── nvr/frigate/
 │   ├── kasm/newt/
 │   ├── omni/omni/
 │   ├── server04/traefik/
 │   ├── server04/vaultwarden/
-│   └── seaweedfs/seaweedfs/
+│   ├── seaweedfs/seaweedfs/
+│   └── racknerd-aegis/         # VPS stacks: gateway, pangolin, identity,
+│                               #   periphery, newt, pangolin-client, alloy-override
 └── periphery/                  # Custom periphery Docker image
     ├── Dockerfile
     └── scripts/sops-decrypt.sh

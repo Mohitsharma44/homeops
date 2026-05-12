@@ -1,6 +1,8 @@
 # Docker Hosts
 
-Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workflow and stack management, see [docker/README.md](/docker/README.md).
+Operational reference for all 7 Docker hosts managed by Komodo. For GitOps workflow and stack management, see [docker/README.md](/docker/README.md).
+
+All Peripheries run v2.1.2 in **outbound mode** (Periphery dials Core, PKI keypair auth). Core is at `http://192.168.11.200:9120` for LAN hosts and `http://komodo.private.sharmamohit.com:9120` (Pangolin private resource) for the VPS.
 
 ## Host Summary
 
@@ -12,6 +14,7 @@ Operational reference for all 6 Docker hosts managed by Komodo. For GitOps workf
 | **omni** | 192.168.11.30 | Ubuntu 22.04 LTS | `root@omni` | `/root/komodo-periphery/compose.yaml` | Siderolabs Omni |
 | **server04** | 192.168.11.17 | Ubuntu 22.04 LTS | `mohitsharma44@server04` | `/home/mohitsharma44/komodo-periphery/compose.yaml` | App server + build server |
 | **seaweedfs** | 192.168.11.133 | Ubuntu 25.10 | `mohitsharma44@seaweedfs` | `/home/mohitsharma44/komodo-periphery/compose.yaml` | SeaweedFS object storage |
+| **racknerd-aegis** | <VPS_PUBLIC_IP> | Ubuntu 22.04 LTS | `<vps-user>@hs` | Komodo-managed stack `aegis-periphery` | VPS gateway (Pangolin/Traefik/identity) |
 
 ## Network Topology
 
@@ -57,7 +60,7 @@ Runs Komodo Core (the control plane) as a self-managed stack, alongside systemd 
 | Komodo Core | `core-core-1` | API on port 9120, UI via Traefik on server04, managed via `komodo-core` stack |
 | FerretDB | `core-ferretdb-1` | MongoDB-compatible database for Core |
 | PostgreSQL | `core-postgres-1` | Backend for FerretDB |
-| Periphery | systemd service | Port 8120 (TLS), config at `/etc/komodo/periphery.config.toml` |
+| Periphery | systemd service | v2.1.2, outbound mode. Config at `/etc/komodo/periphery.config.toml` (`core_address = http://192.168.11.200:9120`, `connect_as = komodo`). Port 8120 still bound but unused. |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
 **Compose**: Managed by Komodo stack `komodo-core`
@@ -150,7 +153,7 @@ Primary application server and Docker build server for custom images.
 
 ### seaweedfs (192.168.11.133)
 
-**Platform**: TrueNAS VM — Ubuntu 25.10
+**Platform**: Proxmox VM (KVM) on the R720XD node (`r720xd`, 192.168.11.15) — Ubuntu 25.10
 **SSH user**: `mohitsharma44` (sudo available)
 
 Distributed object storage providing S3-compatible API for the observability stack (Thanos, Loki, Tempo) and general-purpose storage.
@@ -168,6 +171,33 @@ Distributed object storage providing S3-compatible API for the observability sta
 **Data**: `/mnt/seaweedfs/` (master, volume, filer data)
 **S3 credentials**: Stored in `s3.sops.json` (SOPS-encrypted)
 **S3 buckets**: `thanos-metrics`, `loki-chunks`, `loki-ruler`, `tempo-traces`
+
+---
+
+### racknerd-aegis (<VPS_PUBLIC_IP>)
+
+**Platform**: VPS (Ubuntu 22.04)
+**SSH**: via `ssh hs` alias (account configured locally)
+
+Public gateway. Runs Pangolin (reverse tunnel control plane) + Gerbil (WireGuard) + public-facing Traefik with CrowdSec, plus identity stack (LLDAP + PocketID) and the Komodo agent that manages it all.
+
+| Service | Container | Notes |
+|---------|-----------|-------|
+| aegis-traefik | `aegis-traefik` | Public reverse proxy, CrowdSec bouncer plugin, Route53 ACME |
+| aegis-crowdsec | `aegis-crowdsec` | IDS/IPS reading Traefik access logs |
+| pangolin | `pangolin` | Reverse tunnel control plane, port 3001 (API) |
+| gerbil | `gerbil` | WireGuard manager, NAT hole punch |
+| pangolin-traefik | `pangolin-traefik` | Inner Traefik, `network_mode: service:gerbil` |
+| pangolin-newt | `pangolin-newt` | Newt agent — VPS-side site for `racknerd-aegis` |
+| pangolin-client-obs | `pangolin-client-obs` | Machine Client, network_mode: host. Provides Pangolin DNS proxy + WireGuard routes to private resources (k8s-prometheus, k8s-loki, komodo.private) |
+| pocketid | `pocketid` | OIDC provider, `pocketid.proxy.sharmamohit.com` |
+| lldap | `lldap` | LDAP directory (identity-internal network only) |
+| periphery | `periphery` | v2.1.2, outbound mode. Dials Core via `komodo.private.sharmamohit.com:9120`. Isolated on `newt-periphery` Docker network. Managed by Komodo as the `aegis-periphery` stack. |
+| racknerd-aegis-alloy | `racknerd-aegis-alloy-alloy-1` | Host/container metrics + CrowdSec scrape, pushes via Pangolin tunnel |
+
+**Outbound periphery DNS**: The `aegis-periphery` container is on the isolated `newt-periphery` bridge network (no host networking). It resolves `*.private.sharmamohit.com` via Docker's embedded DNS → host systemd-resolved → split DNS rule → Pangolin DNS proxy at `100.96.128.1`. The split-DNS rule is installed by the `pangolin-dns.service` systemd unit (`/usr/local/bin/pangolin-dns-setup.sh`, oneshot, runs after `docker.service`), which derives the DNS proxy IP dynamically from the routed subnet on the `pangolin` interface.
+
+**Networks (4-way isolation)**: `traefik-public` (internet-facing) / `pangolin-internal` (Pangolin control + PocketID) / `identity-internal` (LLDAP + PocketID bridge) / `newt-periphery` (Periphery + Newt, no exposed ports). Plus host networking for the Machine Client and Alloy. A compromised public container cannot reach Periphery or LLDAP. See [docs/architecture.md](architecture.md) L3 for the full matrix.
 
 ## Periphery Compose Locations
 

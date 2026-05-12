@@ -15,7 +15,7 @@ Each level adds detail — start at L0 for orientation, drill down as needed.
                                       ▼                          ▼
                   ┌───────────────────────────────┐   ┌──────────────────────────────┐
                   │  VPS  (racknerd-aegis)         │   │  Homelab LAN  192.168.11.0/24│
-                  │  23.94.73.98                   │   │                              │
+                  │  <VPS_PUBLIC_IP>                   │   │                              │
                   │                                │   │  ┌────────────────────────┐  │
                   │  aegis-traefik ─► CrowdSec     │   │  │ K8s Cluster (3 nodes)  │  │
                   │  Pangolin + Gerbil + Traefik   │   │  │ ingress-nginx :90      │  │
@@ -40,8 +40,9 @@ Each level adds detail — start at L0 for orientation, drill down as needed.
 - **Docker** — Komodo orchestrates stacks across 7 hosts (6 LAN + 1 VPS).
 
 **How does the VPS connect?** Pangolin WireGuard tunnels — no ports exposed for management.
-Komodo reaches VPS Periphery through a private resource tunnel. VPS Alloy pushes
-metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
+All Peripheries (incl. VPS) run in **outbound mode**: Periphery dials Komodo Core over a
+Pangolin private resource (`komodo.private.sharmamohit.com:9120`). VPS Alloy pushes
+metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency backdoor.
 
 ---
 
@@ -94,7 +95,7 @@ metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 │  └──────────────┘  └──────────────┘                                           │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ seaweedfs (192.168.11.133) ─ TrueNAS VM ────────────────────────────────────┐
+┌─ seaweedfs (192.168.11.133) ─ Proxmox VM on r720xd ──────────────────────────┐
 │  Periphery: Docker (periphery-sops)                                           │
 │  ┌──────────────┐  ┌──────────────────┐                                       │
 │  │ seaweedfs    │  │ seaweedfs-alloy  │  S3 backend for Loki, Tempo, Thanos  │
@@ -102,7 +103,7 @@ metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 │  └──────────────┘  └──────────────────┘                                       │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ racknerd-aegis (23.94.73.98) ─ VPS ─────────────────────────── 7 stacks ────┐
+┌─ racknerd-aegis (<VPS_PUBLIC_IP>) ─ VPS ─────────────────────────── 7 stacks ────┐
 │  Periphery: Docker (periphery-sops) — isolated, no ports, tunnel-only access  │
 │  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────────────┐  │
 │  │ aegis-gateway │ │ aegis-pangolin│ │ aegis-identity│ │ aegis-periphery  │  │
@@ -131,7 +132,7 @@ metrics/logs to K8s through a separate tunnel. SSH is the emergency backdoor.
 
 Most hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`) via Komodo.
 Per-host config via Komodo `environment` field → `INSTANCE_NAME`, `PROMETHEUS_URL`, `LOKI_URL`.
-Exceptions: server04, pve, and truenas run systemd Alloy with extended configs (SMART, journal, IPMI).
+Exceptions: server04, r720xd, pve03, and media-stack (LXC) run systemd Alloy with extended configs (SMART, journal). r720xd + pve03 are provisioned by `proxmox/site.yml`; media-stack by `proxmox/media-stack.yml`. (Historical: the original plan covered pve at .13 and truenas at .15; both were decommissioned in the 2026-03-14 migration.)
 
 ---
 
@@ -298,31 +299,37 @@ Two independent tunnel paths. Pangolin is control plane only —
 data flows peer-to-peer via WireGuard (or Gerbil relay if hole punch fails).
 
 ```
-┌─ Path 1: Komodo → VPS Periphery (management) ─────────────────────────────┐
+┌─ Path 1: VPS Periphery → Komodo Core (management, outbound) ───────────────┐
 │                                                                             │
-│  komodo (192.168.11.200)              VPS (23.94.73.98)                    │
+│  VPS (<VPS_PUBLIC_IP>)                    komodo (192.168.11.200)            │
 │  ┌─────────────────────┐              ┌─────────────────────┐              │
-│  │ Machine Client      │  WireGuard   │ pangolin-newt       │              │
-│  │ /opt/pangolin-client│◄────────────►│ (newt-periphery net)│              │
-│  │ network_mode: host  │  peer-to-peer│                     │              │
-│  └─────────┬───────────┘  (or relay)  └─────────┬───────────┘              │
-│            │                                     │ Docker DNS               │
-│            │ WireGuard route installed            │                          │
-│            │ on komodo host network               ▼                          │
-│            │                           ┌─────────────────────┐              │
-│            │                           │ periphery :8120     │              │
-│            ▼                           │ (newt-periphery net)│              │
-│  Komodo Core connects to               │ NO ports published  │              │
-│  periphery.private.                    └─────────────────────┘              │
-│  sharmamohit.com:8120                                                       │
+│  │ aegis-periphery     │              │ Komodo Core :9120   │              │
+│  │ (newt-periphery net)│              │ (HTTP + websocket)  │              │
+│  │ outbound mode       │              │                     │              │
+│  └─────────┬───────────┘              └─────────▲───────────┘              │
+│            │ dials komodo.private.                │                          │
+│            │ sharmamohit.com:9120                │ PKI keypair auth         │
+│            │ (resolved by split DNS via          │ /config/keys volume      │
+│            │  pangolin-dns.service →             │                          │
+│            │  pangolin-client-obs DNS proxy)     │                          │
+│            ▼                                     │                          │
+│  ┌─────────────────────┐  WireGuard   ┌─────────┴───────────┐              │
+│  │ pangolin-client-obs │◄────────────►│ pangolin-newt        │              │
+│  │ (Machine Client,    │  peer-to-peer│ (homelab-k8s site,   │              │
+│  │  network_mode: host)│  (or relay)  │  on K8s newt)        │              │
+│  └─────────────────────┘              └─────────────────────┘              │
 │                                                                             │
 │  Pangolin role: peer discovery + credential validation only                 │
-│  Data path: Machine Client ◄─WireGuard─► Newt (direct or relayed)         │
+│  Data path: VPS aegis-periphery → obs Machine Client → WireGuard            │
+│             → K8s Newt site → Komodo Core on komodo host                    │
+│                                                                             │
+│  All 6 LAN Peripheries also outbound, but talk to Core directly             │
+│  over LAN (http://192.168.11.200:9120 — no Pangolin needed).               │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─ Path 2: VPS Alloy → K8s Prometheus/Loki (observability) ──────────────────┐
 │                                                                             │
-│  VPS (23.94.73.98)                    K8s Cluster                          │
+│  VPS (<VPS_PUBLIC_IP>)                    K8s Cluster                          │
 │  ┌─────────────────────┐              ┌─────────────────────┐              │
 │  │ pangolin-client-obs │  WireGuard   │ Newt (K8s pod)      │              │
 │  │ (Machine Client)    │◄────────────►│ ns: pangolin        │              │
@@ -348,9 +355,10 @@ data flows peer-to-peer via WireGuard (or Gerbil relay if hole punch fails).
 
 | DNS Name | Resolves Via | Target | Used By |
 |----------|-------------|--------|---------|
-| `periphery.private.sharmamohit.com:8120` | komodo Machine Client | VPS Periphery | Komodo Core |
+| `komodo.private.sharmamohit.com:9120` | VPS Machine Client (`pangolin-client-obs`) + `pangolin-dns.service` split DNS | Komodo Core on komodo host | VPS aegis-periphery (outbound) |
 | `k8s-prometheus.private.sharmamohit.com:9090` | VPS Machine Client | K8s Prometheus | VPS Alloy |
 | `k8s-loki.private.sharmamohit.com:3100` | VPS Machine Client | K8s Loki | VPS Alloy |
+| `periphery.private.sharmamohit.com:8120` | komodo Machine Client (`komodo-mgmt`) | VPS Periphery (legacy inbound path) | Unused since Phase 4 outbound flip; the resource + client still exist as a fallback |
 
 ### Circular dependency & emergency recovery
 
@@ -589,7 +597,7 @@ Emergency backdoor: SSH
 | LAN | 192.168.11.0/24 | All homelab hosts |
 | MetalLB | 192.168.11.88-98 | K8s LoadBalancer services |
 | K8s Ingress | 192.168.11.90 | *.sharmamohit.com |
-| VPS public | 23.94.73.98 | *.proxy.sharmamohit.com |
+| VPS public | <VPS_PUBLIC_IP> | *.proxy.sharmamohit.com |
 | Pangolin private | *.private.sharmamohit.com | WireGuard tunnel resources |
 
 ### DNS cheat sheet
@@ -597,7 +605,7 @@ Emergency backdoor: SSH
 | Domain | Points to |
 |--------|-----------|
 | `*.sharmamohit.com` | K8s ingress (192.168.11.90) |
-| `*.proxy.sharmamohit.com` | VPS Traefik (23.94.73.98) |
+| `*.proxy.sharmamohit.com` | VPS Traefik (<VPS_PUBLIC_IP>) |
 | `*.private.sharmamohit.com` | Pangolin private resources (WireGuard) |
 | `komodo.sharmamohit.com:9120` | Komodo Core API (HTTP) |
 
@@ -606,8 +614,8 @@ Emergency backdoor: SSH
 | Port | Protocol | Service |
 |------|----------|---------|
 | 80, 443 | TCP | Traefik (LAN + VPS) |
-| 8120 | TCP/TLS | Periphery agents (all hosts) |
-| 9120 | TCP/HTTP | Komodo Core API |
+| 8120 | TCP/TLS | Periphery inbound listener — bound on each host but unused since Phase 4 (all peripheries dial Core in outbound mode) |
+| 9120 | TCP/HTTP + websocket | Komodo Core API + Periphery outbound channel (PKI keypair auth) |
 | 51820 | UDP | Gerbil WireGuard (primary) |
 | 21820 | UDP | Gerbil WireGuard (relay) |
 | 8333 | TCP | SeaweedFS S3 API |
