@@ -83,8 +83,19 @@ spec:
               enabled: true
               name: kaneo-secret
               key: auth-secret
-            # Lock down account creation — login via PocketID only.
-            disableRegistration: true
+            # PocketID is the identity gateway: it controls who can
+            # authenticate, and Kaneo auto-provisions users it lets in.
+            #
+            # - disableRegistration MUST stay false: Kaneo's
+            #   databaseHooks.user.create.before runs `checkRegistrationAllowed`
+            #   on EVERY user create — including OIDC. With it `true`, the
+            #   first-time OIDC sign-in is blocked with FORBIDDEN and the user
+            #   bounces back to the auth page.
+            # - disablePasswordRegistration blocks the local /sign-up/email
+            #   form, so the only working signup path is OIDC.
+            # - DISABLE_GUEST_ACCESS (set in extraEnv below) closes the
+            #   anonymous/demo session loophole.
+            disableRegistration: false
             disablePasswordRegistration: true
             # Use the chart's "external DB via existingSecret" path so the full
             # DATABASE_URL comes from the SOPS secret. The bundled Postgres
@@ -100,6 +111,9 @@ spec:
           # PocketID OIDC. Reads client_id/secret from kaneo-secret; discovery
           # URL is non-sensitive and inlined.
           extraEnv:
+            # Disable anonymous/guest sessions so OIDC is the only login path.
+            - name: DISABLE_GUEST_ACCESS
+              value: "true"
             - name: CUSTOM_OAUTH_DISCOVERY_URL
               value: https://pocketid.proxy.sharmamohit.com/.well-known/openid-configuration
             - name: CUSTOM_OAUTH_AUTHORIZATION_URL
