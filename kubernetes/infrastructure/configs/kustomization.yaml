@@ -15,3 +15,5 @@ resources:
   - monitoring-ingress.yaml
   - pangolin-ns.yaml
   - newt-credentials-secret.yaml
+  - kaneo-ns.yaml
+  - kaneo-secret.yaml

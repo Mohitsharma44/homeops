@@ -1,0 +1,159 @@
+# Kaneo — open-source project management.
+#
+# Source: https://github.com/usekaneo/kaneo (charts/kaneo, pinned to git tag).
+# Kaneo does not publish a Helm registry, so ArgoCD renders the chart directly
+# from the upstream git tag. Bump `targetRevision` to upgrade.
+#
+# Secrets live in kubernetes/infrastructure/configs/kaneo-secret.yaml (SOPS).
+# Required keys: auth-secret, postgres-password, database-url,
+# oauth-client-id, oauth-client-secret.
+#
+# Bootstrap checklist:
+#   1. Create an OIDC client in PocketID at https://pocketid.proxy.sharmamohit.com
+#      with callback URL: https://kaneo.sharmamohit.com/api/auth/oauth2/callback/custom
+#   2. `sops kubernetes/infrastructure/configs/kaneo-secret.yaml` — replace the two
+#      REPLACE_WITH_POCKETID_* values with the real client id / secret.
+#   3. Commit and let Flux apply the updated secret (or `flux reconcile
+#      kustomization infra-configs --with-source`).
+#   4. ArgoCD will then sync Kaneo; PocketID login will work end-to-end.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kaneo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/usekaneo/kaneo.git
+    targetRevision: v2.7.2
+    path: charts/kaneo
+    helm:
+      valuesObject:
+        replicaCount: 1
+
+        # --- Bundled PostgreSQL ---------------------------------------------
+        postgresql:
+          enabled: true
+          image:
+            repository: postgres
+            tag: 16-alpine
+          auth:
+            database: kaneo
+            username: kaneo_user
+            # POSTGRES_PASSWORD is sourced from kaneo-secret.postgres-password
+            existingSecret: kaneo-secret
+            secretKeys:
+              userPasswordKey: postgres-password
+          persistence:
+            enabled: true
+            storageClass: ceph-block
+            size: 8Gi
+            accessMode: ReadWriteOnce
+          service:
+            type: ClusterIP
+            port: 5432
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+
+        # --- Kaneo app ------------------------------------------------------
+        kaneo:
+          image:
+            repository: ghcr.io/usekaneo/kaneo
+            tag: "2.7.2"
+            pullPolicy: IfNotPresent
+          service:
+            type: ClusterIP
+            port: 5173
+            targetPort: 5173
+          env:
+            clientUrl: https://kaneo.sharmamohit.com
+            # Set explicitly: chart's `corsOrigins: []` fallback renders an
+            # empty CORS_ORIGINS instead of using clientUrl.
+            corsOrigins:
+              - https://kaneo.sharmamohit.com
+            # AUTH_SECRET pulled from kaneo-secret.auth-secret
+            existingSecret:
+              enabled: true
+              name: kaneo-secret
+              key: auth-secret
+            # Lock down account creation — login via PocketID only.
+            disableRegistration: true
+            disablePasswordRegistration: true
+            # Use the chart's "external DB via existingSecret" path so the full
+            # DATABASE_URL comes from the SOPS secret. The bundled Postgres
+            # above still gets deployed; we just bypass the chart's inline
+            # plaintext URL construction.
+            database:
+              external:
+                enabled: true
+                existingSecret:
+                  enabled: true
+                  name: kaneo-secret
+                  passwordKey: database-url
+          # PocketID OIDC. Reads client_id/secret from kaneo-secret; discovery
+          # URL is non-sensitive and inlined.
+          extraEnv:
+            - name: CUSTOM_OAUTH_DISCOVERY_URL
+              value: https://pocketid.proxy.sharmamohit.com/.well-known/openid-configuration
+            - name: CUSTOM_OAUTH_AUTHORIZATION_URL
+              value: https://pocketid.proxy.sharmamohit.com/authorize
+            - name: CUSTOM_OAUTH_TOKEN_URL
+              value: https://pocketid.proxy.sharmamohit.com/api/oidc/token
+            - name: CUSTOM_OAUTH_USER_INFO_URL
+              value: https://pocketid.proxy.sharmamohit.com/api/oidc/userinfo
+            - name: CUSTOM_OAUTH_LOGOUT_URL
+              value: https://pocketid.proxy.sharmamohit.com/api/oidc/end-session
+            - name: CUSTOM_OAUTH_SCOPES
+              value: openid,profile,email
+            - name: CUSTOM_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: kaneo-secret
+                  key: oauth-client-id
+            - name: CUSTOM_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kaneo-secret
+                  key: oauth-client-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+
+        # --- Ingress --------------------------------------------------------
+        # ingress-nginx's default-ssl-certificate (ingress-nginx/default-tls-cert)
+        # serves the *.sharmamohit.com wildcard, so no per-app TLS block needed.
+        ingress:
+          enabled: true
+          className: nginx
+          annotations:
+            nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+          hosts:
+            - host: kaneo.sharmamohit.com
+              paths:
+                - path: /
+                  pathType: Prefix
+                  service: kaneo
+                  port: 5173
+
+        gateway:
+          enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kaneo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
