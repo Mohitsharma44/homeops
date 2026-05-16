@@ -8,9 +8,15 @@ file_paths = ["docker/stacks/komodo/core/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
 # auto_update intentionally disabled — Komodo cannot redeploy itself safely
-environment = """
-KOMODO_VERSION = [[KOMODO_VERSION]]
-"""
+#
+# KOMODO_VERSION is intentionally NOT set here as a stack `environment` field.
+# When Komodo's `environment` is set, Periphery invokes docker compose with
+# `--env-file <stack-root>/.env` — which OVERRIDES default compose-dir .env
+# discovery and breaks ${KOMODO_DB_USERNAME}/${KOMODO_DB_PASSWORD} interpolation
+# (these vars live only in the SOPS-encrypted compose-dir .sops.env).
+# Instead, KOMODO_VERSION is stored in docker/stacks/komodo/core/.sops.env
+# alongside the DB creds, so the single compose-dir .env contains everything
+# docker compose needs to interpolate. Bump there to upgrade Core.
 [stack.config.pre_deploy]
 path = "docker/stacks/komodo/core"
 command = "sops-decrypt.sh"
