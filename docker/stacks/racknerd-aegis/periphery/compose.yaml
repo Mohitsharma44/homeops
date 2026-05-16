@@ -1,6 +1,6 @@
 services:
   periphery:
-    image: mohitsharma44/komodo-periphery-sops:2.1.2
+    image: mohitsharma44/komodo-periphery-sops:2.2.0
     container_name: periphery
     init: true
     restart: unless-stopped
