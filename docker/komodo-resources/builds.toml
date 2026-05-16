@@ -20,9 +20,11 @@ image_registry.type = "Standard"
 image_registry.params.domain = "docker.io"
 image_registry.params.account = "mohitsharma44"
 image_name = "mohitsharma44/komodo-periphery-sops"
-# Pin the pushed registry tag to KOMODO_VERSION so compose files
-# can reference a stable, predictable tag instead of :latest drift.
-image_tag = "[[KOMODO_VERSION]]"
+# Pin the pushed registry tag so compose files reference a stable,
+# predictable tag instead of :latest drift. Komodo's [[VAR]] interpolation
+# does NOT apply to image_tag (it's validated by docker before interpolation
+# runs), so this must be hardcoded — keep in sync with KOMODO_VERSION above.
+image_tag = "2.2.0"
 build_args = """
 PERIPHERY_TAG = [[KOMODO_VERSION]]
 """
