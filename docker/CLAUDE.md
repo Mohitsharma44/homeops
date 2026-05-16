@@ -81,7 +81,13 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
   - `komodo-core`: `km execute deploy-stack komodo-core`
   - VPS tunnel stacks: `km execute run-procedure deploy-vps-infra` (runs in safe order)
 
-- **deploy-vps-infra failure mode**: After `aegis-pangolin` redeploys (~2min), Komodo marks the VPS server unreachable while the WireGuard tunnel is down. The procedure includes a 30s sleep after the Pangolin stage to let the tunnel recover before proceeding. Even with the sleep, `aegis-newt` deploys may show as "failed" (connection reset) while the container itself comes up fine — always verify with `ssh hs docker ps` rather than relying solely on Komodo's success status.
+- **deploy-vps-infra stage order**: gateway → pangolin → 30s sleep → **pangolin-client** → newt → periphery → identity + monitoring. The pangolin-client (aegis-pangolin-client / racknerd-aegis-obs Machine Client) is deployed right after the sleep so it gets a fresh WireGuard handshake before downstream stacks come up — this self-heals the WG state in the happy path.
+
+- **deploy-vps-infra failure mode** (Pangolin stage timeout): When `aegis-pangolin`'s image actually changes (real upgrade, not idempotent redeploy), the Gerbil/WG restart can hang Komodo's WebSocket session to VPS Periphery beyond the deploy timeout (~85s observed). The procedure aborts mid-way: pangolin container actually came up healthy, but downstream stages never run — `aegis-pangolin-client`'s WireGuard to the K8s newt site can be left in a hung DISCONNECTED state, and Periphery sits in connection-retry backoff. Symptoms: VPS shows "Unreachable" in Komodo, `docker logs periphery` shows `Failed to connect to websocket ... Connection timed out`.
+  - **Recovery**: `km execute run-procedure 'recover-racknerd-aegis-tunnel'` — redeploys aegis-pangolin-client (fresh WG handshake) + aegis-periphery (drops retry backoff, reconnects).
+  - **Verify**: `km list servers -a` shows 7/7 Ok, plus `ssh hs docker ps` shows pangolin/gerbil/periphery all running.
+  - **DNS edge case**: pangolin-client-obs's container restart rewrites `/etc/resolv.conf` and can clobber the split-DNS routing for `*.private.sharmamohit.com`. If Periphery still can't resolve the private domain after recovery, also run: `ssh hs sudo systemctl restart pangolin-dns`. Komodo procedures can't run systemd commands, so this step is manual.
+  - When `deploy-vps-infra` fails at a non-Pangolin stage (e.g., Gateway), **investigate the actual failure** instead of immediately running recover — the recover procedure won't help and would mask the real problem.
 - **VPS Pangolin connectivity**: VPS Periphery dials Komodo Core over a Pangolin private resource (`komodo.private.sharmamohit.com:9120` → `192.168.11.200:9120`), routed through the `racknerd-aegis-obs` Machine Client on the VPS. Split DNS for `*.private.sharmamohit.com` is configured by the `pangolin-dns.service` systemd unit on the VPS (and on the komodo host for symmetric setups). If the tunnel is down, Periphery cannot reach Core — use SSH (`ssh hs`) as the emergency backdoor.
 - **VPS network segmentation**: VPS uses multi-network isolation. Only containers needing WAN access touch `traefik-public` or `pangolin-internal`. Periphery is isolated on `newt-periphery` only (no ports published). LLDAP is on `identity-internal` only (PocketID bridges both networks).
 - **Komodo file_paths**: Only the first entry is used as the compose file. Komodo does NOT support Docker Compose file merge (multiple `-f` flags). To customize a shared stack for one host, create a standalone copy instead of an override.
@@ -111,7 +117,8 @@ km execute deploy-stack <name>            # deploy a stack
 km list stacks -a                         # check stack status
 km list servers -a                        # check server health
 km execute run-build periphery-custom     # rebuild periphery image
-km execute deploy-vps-infra              # deploy VPS stacks in order
+km execute run-procedure deploy-vps-infra              # deploy VPS stacks in order
+km execute run-procedure recover-racknerd-aegis-tunnel # recover VPS tunnel if deploy-vps-infra fails at Pangolin stage
 
 # Systemd Periphery on komodo
 systemctl status periphery               # check periphery status
