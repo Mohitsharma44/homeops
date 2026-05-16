@@ -79,7 +79,7 @@ vaultwarden
 
 [[procedure]]
 name = "deploy-vps-infra"
-description = "Deploy VPS infrastructure stacks in correct order (gateway → pangolin → newt → periphery → identity + monitoring)"
+description = "Deploy VPS infrastructure stacks in correct order (gateway → pangolin → pangolin-client → newt → periphery → identity + monitoring)"
 tags = ["deploy", "racknerd-aegis"]
 
 [[procedure.config.stage]]
@@ -103,6 +103,17 @@ executions = [
   { execution.type = "Sleep", execution.params.duration_ms = 30000 },
 ]
 
+# Restart the Machine Client BEFORE downstream stages. Its WireGuard session
+# to the K8s newt site can be left in a hung DISCONNECTED state after the
+# Pangolin/Gerbil redeploy — recreating the container forces a fresh
+# holepunch/relay handshake so the VPS-→Core private route is healthy before
+# periphery and identity stacks come up.
+[[procedure.config.stage]]
+name = "Observability Tunnel"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-pangolin-client" },
+]
+
 [[procedure.config.stage]]
 name = "Tunnel Agent"
 executions = [
@@ -116,14 +127,46 @@ executions = [
 ]
 
 [[procedure.config.stage]]
-name = "Observability Tunnel"
+name = "Identity and Monitoring"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-identity" },
+  { execution.type = "DeployStack", execution.params.stack = "racknerd-aegis-alloy" },
+]
+
+# Recovery procedure for the documented deploy-vps-infra failure mode:
+# When the Pangolin stage times out (Komodo's WS to VPS Periphery drops during
+# the WireGuard restart), the whole procedure aborts and downstream stages
+# (including Observability Tunnel) never run. aegis-pangolin-client can be
+# left hung — WG to site 10 stuck DISCONNECTED, container silent for minutes —
+# and Periphery then can't reach Core via the private route.
+#
+# Run this procedure to recover. It re-deploys the Machine Client (fresh
+# WG state) and then the Periphery (drops its retry backoff and reconnects).
+#
+# NOTE: pangolin-client-obs's restart rewrites /etc/resolv.conf and clobbers
+# the split-DNS routing for *.private.sharmamohit.com. Komodo procedures can't
+# run systemd commands, so if Periphery still can't resolve the private domain
+# after this procedure, also run on the VPS host:
+#   ssh hs sudo systemctl restart pangolin-dns
+[[procedure]]
+name = "recover-racknerd-aegis-tunnel"
+description = "Recover the VPS Periphery↔Core path after a deploy-vps-infra timeout left aegis-pangolin-client in a hung WireGuard state"
+tags = ["recovery", "racknerd-aegis"]
+
+[[procedure.config.stage]]
+name = "Restart Machine Client"
 executions = [
   { execution.type = "DeployStack", execution.params.stack = "aegis-pangolin-client" },
 ]
 
 [[procedure.config.stage]]
-name = "Identity and Monitoring"
+name = "Wait for tunnel reconnect"
 executions = [
-  { execution.type = "DeployStack", execution.params.stack = "aegis-identity" },
-  { execution.type = "DeployStack", execution.params.stack = "racknerd-aegis-alloy" },
+  { execution.type = "Sleep", execution.params.duration_ms = 10000 },
+]
+
+[[procedure.config.stage]]
+name = "Restart Periphery"
+executions = [
+  { execution.type = "DeployStack", execution.params.stack = "aegis-periphery" },
 ]
