@@ -338,9 +338,85 @@ SOPS-encrypted secrets in `kubernetes/infrastructure/configs/`:
 
 ## Sync Wave Order
 
-1. **Wave 1**: kube-prometheus-stack (CRDs, Prometheus, Grafana, Alertmanager)
-2. **Wave 2**: Thanos, Loki, Tempo (depend on CRDs and sidecar)
-3. **Wave 3**: Alloy (depends on Loki and Tempo endpoints)
+1. **Wave -1**: prometheus-operator-crds (the 10 `monitoring.coreos.com` CRDs; standalone chart)
+2. **Wave 1**: kube-prometheus-stack (Prometheus, Grafana, Alertmanager; `crds.enabled: false`)
+3. **Wave 2**: Thanos, Loki, Tempo (depend on CRDs and sidecar)
+4. **Wave 3**: Alloy (depends on Loki and Tempo endpoints)
+
+See [CRD lifecycle](#crd-lifecycle) for why CRDs are split from the main chart.
+
+## CRD lifecycle
+
+The 10 prometheus-operator CRDs (`Alertmanager`, `Prometheus`, `ServiceMonitor`, `PodMonitor`, `PrometheusRule`, `Probe`, `ThanosRuler`, `AlertmanagerConfig`, `PrometheusAgent`, `ScrapeConfig`) live in a dedicated ArgoCD Application — `prometheus-operator-crds` (file: `kubernetes/apps/argocd-apps/apps/prometheus-operator-crds.yaml`), separate from `kube-prometheus-stack`.
+
+### Why they're separate
+
+On 2026-05-16, bumping the kps chart `81.x → 85.x` failed with ArgoCD `ComparisonError: .spec.hostNetwork: field not declared in schema`. The new chart's templates render `Alertmanager`/`Prometheus` CRs with a top-level `hostNetwork` field, but the live CRDs (operator v0.88.1) didn't declare it. ArgoCD's structured-merge diff library errors out before any sync apply, so the new CRDs can never be installed by the chart itself — a chicken-and-egg.
+
+Splitting CRDs into their own Application at lower sync-wave (`-1` vs kps's `1`) ensures CRDs upgrade first, so kps's diff against the new schema succeeds.
+
+### Version invariant
+
+| CRD chart range | Operator (CRD app `appVersion`) | Matches kps chart |
+|---|---|---|
+| 26.0.x | v0.88.x | 81.x |
+| 27.0.x | v0.89.x | 82.x |
+| 28.0.x | v0.90.x | 83.x, 84.x, 85.x |
+| 29.0.x | v0.91.x | (future) |
+
+CRD chart MINOR follows operator MINOR. Patch versions track operator patches (28.0.0 → v0.90.0, 28.0.1 → v0.90.1).
+
+### Upgrade procedure
+
+1. **Look up the operator version** for the target kps chart:
+   ```bash
+   helm repo update prometheus-community
+   helm search repo prometheus-community/kube-prometheus-stack --versions | head -10
+   ```
+   The `APP VERSION` column shows the operator version.
+
+2. **Bump the CRD app FIRST** to a `prometheus-operator-crds` chart range that matches:
+   - Edit `kubernetes/apps/argocd-apps/apps/prometheus-operator-crds.yaml`
+   - Update `spec.source.targetRevision`
+   - Commit + push
+   - Wait for the new revision to land in the cluster
+   - **Trigger a hard refresh** (soft refresh uses the cached chart and won't actually apply the new CRDs):
+     ```bash
+     kubectl patch application -n argocd prometheus-operator-crds \
+       --type merge -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+     ```
+   - Verify the new operator version is on the CRD:
+     ```bash
+     kubectl get crd alertmanagers.monitoring.coreos.com \
+       -o jsonpath='{.metadata.annotations.operator\.prometheus\.io/version}{"\n"}'
+     ```
+
+3. **Bump the kps app** to the target chart version:
+   - Edit `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml`
+   - Update `spec.source.targetRevision`
+   - Commit + push
+   - Hard-refresh the kps app the same way
+   - Verify operator pod rolled to the new image and `kubectl get application -n argocd kube-prometheus-stack` reports `Synced/Healthy`
+
+### Why not just upgrade kps first?
+
+Tried on 2026-05-16. Failed exactly as described above. The chart bundles CRDs under `charts/crds/`, but ArgoCD's diff phase runs *before* sync apply, so the new CRDs the chart would install can never reach the cluster if the diff fails.
+
+### Pruning protection
+
+All 10 CRDs are annotated with `argocd.argoproj.io/sync-options=Prune=false` and the CRD Application itself has `syncPolicy.automated.prune: false`. CRDs are never auto-pruned by GitOps — removal must be deliberate (manual `kubectl delete crd`). This protects against catastrophic cascade-deletion of all `ServiceMonitor` / `PrometheusRule` / etc. instances if a chart bug ever removes a CRD from its rendered manifest.
+
+To re-apply the annotation if a CRD ever loses it (e.g., recreated by another tool):
+```bash
+for crd in alertmanagerconfigs alertmanagers podmonitors probes \
+           prometheusagents prometheuses prometheusrules \
+           scrapeconfigs servicemonitors thanosrulers; do
+  kubectl annotate crd ${crd}.monitoring.coreos.com \
+    argocd.argoproj.io/sync-options=Prune=false --overwrite
+done
+```
+
+See `CLAUDE.md` Gotcha #8 for the short version.
 
 ## Security
 

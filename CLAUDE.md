@@ -89,6 +89,7 @@ Create `kubernetes/infrastructure/controllers/<name>/` with ns.yaml, repo.yaml, 
 5. **cert-manager**: Route53 DNS01 validation needs encrypted secret in `kubernetes/infrastructure/controllers/certmanager/secret.yaml`.
 6. **Flux Operator**: Manages Flux controllers via `FluxInstance` CRD. To upgrade Flux, bump `version` in `flux-instance.yaml`.
 7. **GitHub App auth**: Source-controller uses a GitHub App (secret `flux-system`), not a PAT.
+8. **kube-prometheus-stack CRDs**: CRDs are managed by a separate ArgoCD Application (`prometheus-operator-crds`, sync-wave -1). The main `kube-prometheus-stack` Application sets `crds.enabled: false`. **Upgrade workflow**: bump the CRD app FIRST to a version matching the operator in the target kps chart, then bump kps. Version invariant: CRD chart minor follows operator minor (28.0.x ↔ v0.90.x, 29.0.x ↔ v0.91.x). Skipping this order causes ArgoCD `ComparisonError` on Alertmanager/Prometheus CRs because the live CRD schema lacks fields the new chart renders. After bumping the CRD app's `targetRevision`, trigger `argocd.argoproj.io/refresh=hard` on it — soft refresh uses the cached chart and won't actually apply new CRDs. See `docs/monitoring.md` "CRD lifecycle".
 
 ## Commands
 
