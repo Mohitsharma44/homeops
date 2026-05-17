@@ -1,0 +1,41 @@
+# prometheus-operator CRDs - separate ArgoCD Application
+#
+# Why this exists: kube-prometheus-stack 82.x+ adds new top-level fields to
+# the Alertmanager/Prometheus CRDs (e.g. spec.hostNetwork). ArgoCD's
+# structured-merge diff reads the LIVE CRD schema and errors out if a
+# rendered field isn't declared - a CRD chicken-and-egg. Separating CRDs
+# into their own Application (synced at wave -1) breaks the deadlock so
+# kps can render against the new schema before the chart applies.
+#
+# Version invariant: CRD chart minor follows operator minor.
+#   28.0.x  = operator v0.90.x  (matches kps chart 83.x, 84.x, 85.x)
+#   29.0.x  = operator v0.91.x
+#
+# Upgrade workflow: bump THIS app first to a version matching the operator
+# in the target kps chart, then bump kps. See docs/monitoring.md
+# "CRD lifecycle" for the full procedure.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-operator-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: monitoring
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus-operator-crds
+    targetRevision: "28.x"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
