@@ -5,6 +5,7 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -12,9 +13,14 @@ spec:
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
-    targetRevision: "81.x"
+    targetRevision: "85.x"
     helm:
       valuesObject:
+        # CRDs are managed by the separate prometheus-operator-crds Application
+        # (sync-wave -1). See docs/monitoring.md "CRD lifecycle" for the
+        # upgrade workflow and version invariant.
+        crds:
+          enabled: false
         prometheus:
           prometheusSpec:
             enableRemoteWriteReceiver: true
