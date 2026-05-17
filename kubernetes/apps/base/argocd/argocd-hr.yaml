@@ -10,6 +10,10 @@
 #            https://argocd.sharmamohit.com/auth/callback
 #            https://argocd.sharmamohit.com/pkce/verify
 #        - PKCE: enabled
+#        - Public Client: ENABLED — ArgoCD's SPA PKCE flow does not send a
+#          client_secret on the token exchange (the browser can't safely
+#          embed secrets). Without Public Client on, PocketID rejects the
+#          token POST with "client id or secret not provided".
 #        - Allowed User Groups: argocd-admins (and any others you want to
 #          let through the gate — RBAC below decides what they can do)
 #   2. Create a PocketID group with Name `argocd_admins` (underscore — that's
@@ -60,12 +64,12 @@ spec:
         resource.compareoptions: |
           ignoreResourceStatusField: all
         # --- PocketID SSO (OIDC) ------------------------------------------
-        # Client registered in PocketID at https://pocketid.proxy.sharmamohit.com
-        # Callback URL: https://argocd.sharmamohit.com/auth/callback
-        # PKCE enabled (PocketID supports it; safer for browser flow).
-        # clientID/clientSecret resolved from the argocd-pocketid-oidc Secret
-        # (labeled app.kubernetes.io/part-of: argocd so ArgoCD's
-        # $secretName:key substitution can find it).
+        # Client registered as a PUBLIC client in PocketID at
+        # https://pocketid.proxy.sharmamohit.com (PKCE-only, no client
+        # secret — see bootstrap notes at top of file).
+        # clientID resolved from the argocd-pocketid-oidc Secret (labeled
+        # app.kubernetes.io/part-of: argocd so ArgoCD's $secretName:key
+        # substitution can find it).
         #
         # Local admin (argocd-initial-admin-secret) remains usable at
         # /login as break-glass — the SSO button appears alongside it.
@@ -73,7 +77,6 @@ spec:
           name: PocketID
           issuer: https://pocketid.proxy.sharmamohit.com
           clientID: $argocd-pocketid-oidc:clientID
-          clientSecret: $argocd-pocketid-oidc:clientSecret
           requestedScopes: ["openid", "profile", "email", "groups"]
           requestedIDTokenClaims: {"groups": {"essential": true}}
           enablePKCEAuthentication: true
