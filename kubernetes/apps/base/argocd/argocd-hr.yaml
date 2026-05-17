@@ -3,7 +3,12 @@
 # Bootstrap (one-time):
 #   1. In PocketID UI (https://pocketid.proxy.sharmamohit.com) create an OIDC
 #      client:
-#        - Callback URL: https://argocd.sharmamohit.com/auth/callback
+#        - Callback URLs (must register BOTH — PKCE is on, so ArgoCD's SPA
+#          login uses /pkce/verify while the server-initiated flow uses
+#          /auth/callback; registering only one fails with "invalid
+#          callback URL"):
+#            https://argocd.sharmamohit.com/auth/callback
+#            https://argocd.sharmamohit.com/pkce/verify
 #        - PKCE: enabled
 #        - Allowed User Groups: argocd-admins (and any others you want to
 #          let through the gate — RBAC below decides what they can do)
