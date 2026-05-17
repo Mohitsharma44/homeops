@@ -63,7 +63,14 @@ services:
       KOMODO_DATABASE_ADDRESS: 127.0.0.1:27017
       KOMODO_DATABASE_USERNAME: ${KOMODO_DB_USERNAME}
       KOMODO_DATABASE_PASSWORD: ${KOMODO_DB_PASSWORD}
-      KOMODO_HOST: https://komodo.sharmamohit.com
+      # Komodo's only exposed endpoint is the bare HTTP API on :9120 (no
+      # HTTPS reverse proxy in front yet). KOMODO_HOST drives the OIDC
+      # redirect_uri that Komodo sends to PocketID, so it MUST match how
+      # the browser reaches Komodo — including scheme and port. Mismatch
+      # = "invalid callback URL" 400 from PocketID. TODO: front Komodo
+      # with HTTPS (Pangolin local-site or Traefik on komodo host) and
+      # set KOMODO_HOST back to https://komodo.sharmamohit.com.
+      KOMODO_HOST: http://komodo.sharmamohit.com:9120
       KOMODO_TITLE: Komodo
       KOMODO_LOCAL_AUTH: "true"
       KOMODO_DISABLE_USER_REGISTRATION: "true"
