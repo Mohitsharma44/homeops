@@ -324,8 +324,8 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
 - **Role mapping** (via the `groups` claim from PocketID — these must match the group's **Name** field, which is what PocketID puts in the claim, *not* the Friendly Name):
   - `grafana_admins` → Admin
   - `grafana_editors` → Editor
-  - else → Viewer (`role_attribute_strict: false` so users without a group still sign in)
-- **No auto-provisioning**: `allow_sign_up: false`. Users must be pre-created in Grafana (matching the email PocketID will send) before they can sign in. Access is gated at two layers: PocketID's "Allowed user groups" on the client AND Grafana's user roster.
+  - anything else → **rejected** (`role_attribute_strict: true`, JMESPath fallback is empty)
+- **Auto-provisioning**: `allow_sign_up: true`. PocketID is the access gate via "Allowed User Groups" on the OIDC client, and `role_attribute_strict` ensures only users in one of the two role groups get in (no silent default-Viewer). Grafana doesn't keep a parallel user roster.
 
 ### PocketID quirks vs vanilla OIDC
 
@@ -333,6 +333,7 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
 - `email_attribute_name: "email:primary"` is PocketID's recommended idiom (Grafana's primary-email helper) rather than `email_attribute_path: email`.
 - `login_attribute_path` / `name_attribute_path` left to defaults per PocketID guide.
 - **Departure from PocketID guide**: `signout_redirect_url` set so Grafana logout also ends the PocketID session (true SSO logout) — guide says leave empty (Grafana-only logout).
+- **Departure from PocketID guide**: `allow_sign_up: true` (guide says disabled). PocketID is already the access gate; duplicating the user roster in Grafana adds friction without security. Paired with `role_attribute_strict: true` so the gate still has teeth.
 
 ### Bootstrap
 
@@ -346,13 +347,12 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
    sops kubernetes/infrastructure/configs/grafana-oidc-secret.yaml
    # replace REPLACE_WITH_POCKETID_CLIENT_ID and REPLACE_WITH_POCKETID_CLIENT_SECRET
    ```
-4. Pre-create each user in Grafana (Server Admin → Users → New user) with `Email` matching the email PocketID will send. Without this, OIDC sign-in fails with "Signup is disabled" since `allow_sign_up: false`.
-5. Commit. Flux applies the secret, ArgoCD picks up the helm value changes and restarts the Grafana pod.
+4. Commit. Flux applies the secret, ArgoCD picks up the helm value changes and restarts the Grafana pod. Users are auto-provisioned in Grafana on their first successful sign-in.
 
 ### Troubleshooting
 
-- **"Signup is disabled" on first OIDC login**: expected when the user hasn't been pre-created in Grafana — create the user with the matching email and retry. If the email matches but the error persists, add `oauth_allow_insecure_email_lookup = true` under the `[auth]` block in `grafana.ini` (Grafana defaults to a strict match that can reject OIDC-issued emails).
-- **User lands as Viewer despite being in `grafana_admins`**: verify the group's **Name** field in PocketID is exactly `grafana_admins` (not the Friendly Name, and not `grafana-admins` with a hyphen — the claim uses the Name verbatim), and that the `groups` scope is in the client's allowed scopes.
+- **Sign-in rejected after PocketID redirect with "user does not have a role" / no-role error**: expected when the user isn't in `grafana_admins` or `grafana_editors`. Either add them to one of those PocketID groups, or loosen `role_attribute_strict` to `false` and let unmatched users default to Viewer.
+- **User lands as Editor when they should be Admin (or vice versa)**: verify the group's **Name** field in PocketID is exactly `grafana_admins` / `grafana_editors` (not the Friendly Name, and not hyphenated — the claim uses the Name verbatim).
 - **"You're not allowed to access this service" on the PocketID consent screen**: the OIDC client has an "Allowed User Groups" allowlist that doesn't include any group the user is in. Add the user's group to the client's Allowed User Groups (or empty the field to allow all PocketID users).
 
 ## Retention Policy
