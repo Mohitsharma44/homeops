@@ -1,3 +1,25 @@
+# ArgoCD with PocketID SSO.
+#
+# Bootstrap (one-time):
+#   1. In PocketID UI (https://pocketid.proxy.sharmamohit.com) create an OIDC
+#      client:
+#        - Callback URL: https://argocd.sharmamohit.com/auth/callback
+#        - PKCE: enabled
+#        - Allowed User Groups: argocd-admins (and any others you want to
+#          let through the gate — RBAC below decides what they can do)
+#   2. Create a PocketID group with Name `argocd_admins` (underscore — that's
+#      the literal value emitted in the `groups` claim; the Friendly Name
+#      can be `argocd-admins` for display). Assign yourself to it.
+#   3. Fill in the real credentials:
+#        sops kubernetes/infrastructure/configs/argocd-oidc-secret.yaml
+#        # replace REPLACE_WITH_POCKETID_* placeholders
+#   4. Commit. Flux applies the secret + the HelmRelease values, ArgoCD
+#      restarts and the "PocketID" SSO button appears on /login alongside
+#      the local admin form (kept as break-glass).
+#
+# RBAC: tweak configs.rbac.policy.csv below to add more groups/roles.
+# Local admin (argocd-initial-admin-secret in cluster) remains usable at
+# /login.
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -23,14 +45,47 @@ spec:
       domain: argocd.sharmamohit.com
     configs:
       cm:
+        # ArgoCD external URL — required for the OIDC callback to resolve
+        # to the public hostname rather than the in-cluster service.
+        url: https://argocd.sharmamohit.com
         exec.enabled: "true"
         statusbadge.enabled: "true"
         # Skip status fields during resource comparison to avoid schema mismatches
         # between K8s API version and ArgoCD's internal schemas
         resource.compareoptions: |
           ignoreResourceStatusField: all
+        # --- PocketID SSO (OIDC) ------------------------------------------
+        # Client registered in PocketID at https://pocketid.proxy.sharmamohit.com
+        # Callback URL: https://argocd.sharmamohit.com/auth/callback
+        # PKCE enabled (PocketID supports it; safer for browser flow).
+        # clientID/clientSecret resolved from the argocd-pocketid-oidc Secret
+        # (labeled app.kubernetes.io/part-of: argocd so ArgoCD's
+        # $secretName:key substitution can find it).
+        #
+        # Local admin (argocd-initial-admin-secret) remains usable at
+        # /login as break-glass — the SSO button appears alongside it.
+        oidc.config: |
+          name: PocketID
+          issuer: https://pocketid.proxy.sharmamohit.com
+          clientID: $argocd-pocketid-oidc:clientID
+          clientSecret: $argocd-pocketid-oidc:clientSecret
+          requestedScopes: ["openid", "profile", "email", "groups"]
+          requestedIDTokenClaims: {"groups": {"essential": true}}
+          enablePKCEAuthentication: true
+      rbac:
+        # Group → role mapping uses the PocketID group's Name field (the
+        # claim value), not Friendly Name. Match the underscored naming
+        # convention used for Grafana (grafana_admins / grafana_editors).
+        #
+        # policy.default is empty so users not in any mapped group land
+        # with NO permissions — they can sign in but see nothing. To allow
+        # all signed-in users read-only access, set: role:readonly
+        policy.default: ""
+        scopes: "[groups, email]"
+        policy.csv: |
+          g, argocd_admins, role:admin
     server:
-      ingress: 
+      ingress:
         enabled: true
         annotations:
           nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
