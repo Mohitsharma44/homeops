@@ -124,11 +124,66 @@ spec:
               enabled: true
             alerting:
               enabled: false
+            # --- PocketID SSO (OIDC) ----------------------------------------
+            # Client registered in PocketID UI at https://pocketid.proxy.sharmamohit.com
+            # Callback: https://grafana.sharmamohit.com/login/generic_oauth
+            # Local admin (grafana-admin secret) remains usable via /login as
+            # break-glass — auto_login stays false.
+            #
+            # Role mapping uses the `groups` claim from PocketID:
+            #   group "grafana-admins"  → Admin
+            #   group "grafana-editors" → Editor
+            #   anything else           → Viewer
+            # Create those two groups in PocketID and assign users; otherwise
+            # all signed-in PocketID users land as Viewer.
+            auth:
+              disable_login_form: false
+              oauth_auto_login: false
+            # Config follows PocketID's official Grafana guide
+            # (https://pocket-id.org/docs/client-examples/grafana) with one
+            # intentional departure: signout_redirect_url set so Grafana logout
+            # also ends the PocketID session (true SSO logout vs Grafana-only).
+            #
+            # allow_sign_up: false — no auto-provisioning. Users must be
+            # pre-created in Grafana (matching the email PocketID will send)
+            # before they can sign in. Access gated by PocketID's "Allowed
+            # user groups" on the client AND by Grafana's user roster.
+            #
+            # PocketID quirks:
+            # - api_url intentionally omitted: PocketID returns all claims in
+            #   the ID token, so Grafana doesn't need a /userinfo round-trip.
+            # - email_attribute_name uses Grafana's "email:primary" helper as
+            #   PocketID recommends; login/name attributes left to defaults.
+            "auth.generic_oauth":
+              enabled: true
+              name: PocketID
+              icon: signin
+              allow_sign_up: false
+              auto_login: false
+              client_id: $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_ID}
+              client_secret: $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+              scopes: openid profile email groups
+              auth_url: https://pocketid.proxy.sharmamohit.com/authorize
+              token_url: https://pocketid.proxy.sharmamohit.com/api/oidc/token
+              signout_redirect_url: https://pocketid.proxy.sharmamohit.com/api/oidc/end-session
+              use_pkce: true
+              use_refresh_token: true
+              email_attribute_name: "email:primary"
+              role_attribute_path: "contains(groups[*], 'grafana-admins') && 'Admin' || contains(groups[*], 'grafana-editors') && 'Editor' || 'Viewer'"
+              role_attribute_strict: false
           envValueFrom:
             GF_SLACK_WEBHOOK_URL:
               secretKeyRef:
                 name: alertmanager-slack-webhook
                 key: slack-webhook-url
+            GF_AUTH_GENERIC_OAUTH_CLIENT_ID:
+              secretKeyRef:
+                name: grafana-oidc
+                key: oauth-client-id
+            GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+              secretKeyRef:
+                name: grafana-oidc
+                key: oauth-client-secret
           # Grafana Alerting provisioning — sends Slack notifications via Grafana.
           # IMPORTANT: Thresholds here must match additionalPrometheusRulesMap below.
           # Grafana rules feed Slack (via contact point below).

@@ -310,8 +310,49 @@ SOPS-encrypted secrets in `kubernetes/infrastructure/configs/`:
 | `seaweedfs-s3-secret` | monitoring | `aws-access-key-id`, `aws-secret-access-key` | Loki, Tempo (via env vars) |
 | `thanos-objstore-secret` | monitoring | `objstore.yml` | Prometheus Thanos sidecar, Thanos components |
 | `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | Ingress basic auth for external write endpoints |
+| `grafana-admin` | monitoring | `admin-user`, `admin-password` | Grafana local admin (break-glass login at `/login`) |
+| `grafana-oidc` | monitoring | `oauth-client-id`, `oauth-client-secret` | Grafana PocketID SSO (env vars in pod) |
 
 **Credential rotation note**: The `seaweedfs-s3-secret` and `thanos-objstore-secret` both contain the same SeaweedFS observability IAM credentials. When rotating credentials, update **both** secrets, then re-encrypt with SOPS.
+
+## Grafana SSO (PocketID OIDC)
+
+Grafana is wired to PocketID via the generic OAuth provider (config in `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` under `grafana.grafana.ini["auth.generic_oauth"]`). Config follows [PocketID's official Grafana guide](https://pocket-id.org/docs/client-examples/grafana) with two deliberate departures noted below.
+
+- **Login page**: `/login` shows the "Sign in with PocketID" button alongside the local username/password form. `auto_login: false` keeps the local admin (`grafana-admin` secret) as break-glass.
+- **Callback URL** (register in PocketID): `https://grafana.sharmamohit.com/login/generic_oauth`
+- **Role mapping** (via the `groups` claim from PocketID):
+  - `grafana-admins` → Admin
+  - `grafana-editors` → Editor
+  - else → Viewer (`role_attribute_strict: false` so users without a group still sign in)
+- **No auto-provisioning**: `allow_sign_up: false`. Users must be pre-created in Grafana (matching the email PocketID will send) before they can sign in. Access is gated at two layers: PocketID's "Allowed user groups" on the client AND Grafana's user roster.
+
+### PocketID quirks vs vanilla OIDC
+
+- `api_url` is intentionally omitted: PocketID returns all claims in the ID token, so Grafana doesn't need a `/userinfo` round-trip.
+- `email_attribute_name: "email:primary"` is PocketID's recommended idiom (Grafana's primary-email helper) rather than `email_attribute_path: email`.
+- `login_attribute_path` / `name_attribute_path` left to defaults per PocketID guide.
+- **Departure from PocketID guide**: `signout_redirect_url` set so Grafana logout also ends the PocketID session (true SSO logout) — guide says leave empty (Grafana-only logout).
+
+### Bootstrap
+
+1. In PocketID UI (`https://pocketid.proxy.sharmamohit.com`), create a new OIDC client:
+   - Callback URL: `https://grafana.sharmamohit.com/login/generic_oauth`
+   - Scopes requested by Grafana: `openid profile email groups`
+   - Allowed user groups: restrict here.
+2. Create `grafana-admins` and/or `grafana-editors` groups in PocketID and assign users. **Group names are case-sensitive** and must match the `role_attribute_path` exactly.
+3. Fill in the real client credentials:
+   ```bash
+   sops kubernetes/infrastructure/configs/grafana-oidc-secret.yaml
+   # replace REPLACE_WITH_POCKETID_CLIENT_ID and REPLACE_WITH_POCKETID_CLIENT_SECRET
+   ```
+4. Pre-create each user in Grafana (Server Admin → Users → New user) with `Email` matching the email PocketID will send. Without this, OIDC sign-in fails with "Signup is disabled" since `allow_sign_up: false`.
+5. Commit. Flux applies the secret, ArgoCD picks up the helm value changes and restarts the Grafana pod.
+
+### Troubleshooting
+
+- **"Signup is disabled" on first OIDC login**: expected when the user hasn't been pre-created in Grafana — create the user with the matching email and retry. If the email matches but the error persists, add `oauth_allow_insecure_email_lookup = true` under the `[auth]` block in `grafana.ini` (Grafana defaults to a strict match that can reject OIDC-issued emails).
+- **User lands as Viewer despite being in `grafana-admins`**: verify the group name in PocketID matches exactly (case-sensitive), and that the `groups` scope is in the client's allowed scopes.
 
 ## Retention Policy
 
