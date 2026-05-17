@@ -67,9 +67,23 @@ services:
       KOMODO_TITLE: Komodo
       KOMODO_LOCAL_AUTH: "true"
       KOMODO_DISABLE_USER_REGISTRATION: "true"
-      KOMODO_ENABLE_NEW_USERS: "false"
+      # OIDC signups are allowed (PocketID's "Allowed User Groups" on the
+      # client is the actual access gate). Local form signups stay blocked.
+      KOMODO_DISABLE_OIDC_USER_REGISTRATION: "false"
+      # Auto-enable on first sign-in. Komodo's per-user permission model
+      # still means a new user has no resource access until an existing
+      # admin grants it via the UI (Settings → Users).
+      KOMODO_ENABLE_NEW_USERS: "true"
       KOMODO_MONITORING_INTERVAL: "15-sec"
       KOMODO_RESOURCE_POLL_INTERVAL: "1-hr"
+      # --- PocketID SSO (OIDC) -------------------------------------------
+      # Confidential client (no PKCE). Client ID + Secret in .sops.env.
+      # Callback URL to register in PocketID:
+      #   https://komodo.sharmamohit.com/auth/oidc/callback
+      # Per https://pocket-id.org/docs/client-examples/komodo
+      KOMODO_OIDC_ENABLED: "true"
+      KOMODO_OIDC_PROVIDER: https://pocketid.proxy.sharmamohit.com
+      KOMODO_OIDC_USE_FULL_EMAIL: "true"
       TZ: America/Vancouver
     volumes:
       - /etc/komodo/backups:/backups
