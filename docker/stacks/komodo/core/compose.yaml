@@ -87,6 +87,11 @@ services:
       TZ: America/Vancouver
     volumes:
       - /etc/komodo/backups:/backups
+      # Persist Core's signing keypair across container recreates. Without
+      # this mount, every `docker compose up -d` regenerates a new keypair,
+      # breaking all 7 Periphery agents (their PERIPHERY_CORE_PUBLIC_KEYS
+      # would no longer match Core's new public key). 2026-05-17 incident.
+      - /etc/komodo/keys:/config/keys
     logging:
       driver: "json-file"
       options:
