@@ -321,9 +321,9 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
 
 - **Login page**: `/login` shows the "Sign in with PocketID" button alongside the local username/password form. `auto_login: false` keeps the local admin (`grafana-admin` secret) as break-glass.
 - **Callback URL** (register in PocketID): `https://grafana.sharmamohit.com/login/generic_oauth`
-- **Role mapping** (via the `groups` claim from PocketID):
-  - `grafana-admins` → Admin
-  - `grafana-editors` → Editor
+- **Role mapping** (via the `groups` claim from PocketID — these must match the group's **Name** field, which is what PocketID puts in the claim, *not* the Friendly Name):
+  - `grafana_admins` → Admin
+  - `grafana_editors` → Editor
   - else → Viewer (`role_attribute_strict: false` so users without a group still sign in)
 - **No auto-provisioning**: `allow_sign_up: false`. Users must be pre-created in Grafana (matching the email PocketID will send) before they can sign in. Access is gated at two layers: PocketID's "Allowed user groups" on the client AND Grafana's user roster.
 
@@ -340,7 +340,7 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
    - Callback URL: `https://grafana.sharmamohit.com/login/generic_oauth`
    - Scopes requested by Grafana: `openid profile email groups`
    - Allowed user groups: restrict here.
-2. Create `grafana-admins` and/or `grafana-editors` groups in PocketID and assign users. **Group names are case-sensitive** and must match the `role_attribute_path` exactly.
+2. Create `grafana_admins` and/or `grafana_editors` groups in PocketID and assign users. Use those underscored strings in the group's **Name** field (the claim value); the Friendly Name shown in the UI can be anything. The `role_attribute_path` matches against the Name exactly (case-sensitive).
 3. Fill in the real client credentials:
    ```bash
    sops kubernetes/infrastructure/configs/grafana-oidc-secret.yaml
@@ -352,7 +352,8 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
 ### Troubleshooting
 
 - **"Signup is disabled" on first OIDC login**: expected when the user hasn't been pre-created in Grafana — create the user with the matching email and retry. If the email matches but the error persists, add `oauth_allow_insecure_email_lookup = true` under the `[auth]` block in `grafana.ini` (Grafana defaults to a strict match that can reject OIDC-issued emails).
-- **User lands as Viewer despite being in `grafana-admins`**: verify the group name in PocketID matches exactly (case-sensitive), and that the `groups` scope is in the client's allowed scopes.
+- **User lands as Viewer despite being in `grafana_admins`**: verify the group's **Name** field in PocketID is exactly `grafana_admins` (not the Friendly Name, and not `grafana-admins` with a hyphen — the claim uses the Name verbatim), and that the `groups` scope is in the client's allowed scopes.
+- **"You're not allowed to access this service" on the PocketID consent screen**: the OIDC client has an "Allowed User Groups" allowlist that doesn't include any group the user is in. Add the user's group to the client's Allowed User Groups (or empty the field to allow all PocketID users).
 
 ## Retention Policy
 

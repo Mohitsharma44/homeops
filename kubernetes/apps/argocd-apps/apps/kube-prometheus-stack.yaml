@@ -131,9 +131,11 @@ spec:
             # break-glass — auto_login stays false.
             #
             # Role mapping uses the `groups` claim from PocketID:
-            #   group "grafana-admins"  → Admin
-            #   group "grafana-editors" → Editor
+            #   group "grafana_admins"  → Admin
+            #   group "grafana_editors" → Editor
             #   anything else           → Viewer
+            # Names match PocketID's group "Name" field (the claim value), not
+            # the "Friendly Name" shown in the UI. Underscores are deliberate.
             # Create those two groups in PocketID and assign users; otherwise
             # all signed-in PocketID users land as Viewer.
             auth:
@@ -169,7 +171,7 @@ spec:
               use_pkce: true
               use_refresh_token: true
               email_attribute_name: "email:primary"
-              role_attribute_path: "contains(groups[*], 'grafana-admins') && 'Admin' || contains(groups[*], 'grafana-editors') && 'Editor' || 'Viewer'"
+              role_attribute_path: "contains(groups[*], 'grafana_admins') && 'Admin' || contains(groups[*], 'grafana_editors') && 'Editor' || 'Viewer'"
               role_attribute_strict: false
           envValueFrom:
             GF_SLACK_WEBHOOK_URL:
