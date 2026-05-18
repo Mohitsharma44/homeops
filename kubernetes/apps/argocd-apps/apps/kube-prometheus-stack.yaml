@@ -258,33 +258,6 @@ spec:
                           repeat_interval: 1h
             rules.yaml:
               apiVersion: 1
-              # One-shot pruning of media-stack alert rules — Grafana 13 won't
-              # delete provisioned rules whose group has been removed from the
-              # file, so we declare them here for explicit removal. Safe to
-              # delete this whole deleteRules block once Grafana has reconciled.
-              deleteRules:
-                - orgId: 1
-                  uid: media-arr-service-down
-                - orgId: 1
-                  uid: media-jellyfin-down
-                - orgId: 1
-                  uid: media-stack-host-absent
-                - orgId: 1
-                  uid: media-decypharr-fuse-unhealthy
-                - orgId: 1
-                  uid: rd-account-expiring-soon
-                - orgId: 1
-                  uid: rd-account-expiry-critical
-                - orgId: 1
-                  uid: rd-expiry-check-failed
-                - orgId: 1
-                  uid: rd-fuse-mount-down
-                - orgId: 1
-                  uid: media-stack-disk-usage
-                - orgId: 1
-                  uid: jellyfin-transcoding-errors
-                - orgId: 1
-                  uid: decypharr-rd-api-errors
               groups:
                 - orgId: 1
                   name: infra-node-health
