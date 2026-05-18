@@ -8,7 +8,7 @@
 > | `truenas` (TrueNAS SCALE, 192.168.11.15) | Decommissioned (TrueNAS replaced by Proxmox on the same hardware) | `r720xd` (Proxmox, 192.168.11.15) — same hardware, now PVE |
 > | `server04` (Ubuntu 22.04, 192.168.11.17) | Unchanged | — |
 >
-> Also added since the original plan: `media-stack` LXC (192.168.11.40) runs systemd Alloy too, provisioned by `proxmox/media-stack.yml`. The 3-host pve/truenas/server04 narrative below is preserved as historical context. **Current Alloy/smartctl operational reference**: see the "Listen Address Summary" table in Phase 2 (updated) and `docs/monitoring.md`.
+> The 3-host pve/truenas/server04 narrative below is preserved as historical context. **Current Alloy/smartctl operational reference**: see the "Listen Address Summary" table in Phase 2 (updated) and `docs/monitoring.md`.
 
 ## Context
 
@@ -648,7 +648,6 @@ All smartctl_exporter instances bind to `127.0.0.1:9633` — Alloy always runs o
 | `server04` | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package) | 5 drives (4 SAS via `cciss,N` + 1 SSD). Host metrics + SMART + cAdvisor + Docker logs + journal. Replaces former `server04-alloy` Komodo stack. Unchanged from original plan. |
 | `r720xd` | `127.0.0.1:9633` (systemd, v0.14.0) | `/opt/smartctl-exporter/` | Systemd (APT package, deployed by `proxmox/site.yml`) | 14 drives (LSI SAS2308 IT mode), auto-scan. Replaced the TrueNAS-era setup (no more `/mnt/ssdpool1/admin/` ZFS dataset or Post Init Script — Proxmox uses standard `/etc/...` paths). |
 | `pve03` | `127.0.0.1:9633` (systemd, v0.14.0) | Systemd (APT package, deployed by `proxmox/site.yml`) | — | 1 drive. Newer Proxmox node added after the migration; replaces the old `pve` at 192.168.11.13 which is decommissioned from monitoring. |
-| `media-stack` (LXC) | n/a | n/a | Systemd (APT package, deployed by `proxmox/media-stack.yml`) | LXC has no direct disk access; relies on the underlying Proxmox host (`r720xd`) for SMART. Alloy runs to ship container metrics, *arr metrics, Jellyfin metrics, and journal logs. |
 
 **Original plan reference (historical, pre-migration):**
 

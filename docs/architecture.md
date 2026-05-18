@@ -132,7 +132,7 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 
 Most hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`) via Komodo.
 Per-host config via Komodo `environment` field → `INSTANCE_NAME`, `PROMETHEUS_URL`, `LOKI_URL`.
-Exceptions: server04, r720xd, pve03, and media-stack (LXC) run systemd Alloy with extended configs (SMART, journal). r720xd + pve03 are provisioned by `proxmox/site.yml`; media-stack by `proxmox/media-stack.yml`. (Historical: the original plan covered pve at .13 and truenas at .15; both were decommissioned in the 2026-03-14 migration.)
+Exceptions: server04, r720xd, and pve03 run systemd Alloy with extended configs (SMART, journal). r720xd + pve03 are provisioned by `proxmox/site.yml`. (Historical: the original plan covered pve at .13 and truenas at .15; both were decommissioned in the 2026-03-14 migration.)
 
 ---
 
