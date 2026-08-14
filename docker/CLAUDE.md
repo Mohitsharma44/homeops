@@ -36,7 +36,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 - **UI**: https://komodo.sharmamohit.com
 - **API**: http://komodo.sharmamohit.com:9120 (HTTP, not HTTPS)
 - **CLI**: `km`
-- **Periphery**: v2.1.2, all 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
+- **Periphery**: v2.3.2 on the 5 reachable hosts; kasm and seaweedfs are stranded at 2.2.0 (both hosts unreachable — they converge on next boot). All 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
 
 ## Secrets (SOPS + age)
 
@@ -95,20 +95,73 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 
 ## Updating Komodo (Core + Periphery)
 
-Core and Periphery are released together — update both at the same time.
+Core and Periphery release in lockstep and mismatched versions are unsupported — move both together.
 
-1. Check current vs latest: `km get version` and Komodo UI banner
-2. Bump image tag in `docker/stacks/komodo/core/compose.yaml`
-3. Commit, push, then sync: `km execute sync 'mohitsharma44/homeops'`
-4. Deploy Core: `km execute deploy-stack komodo-core`
-5. Update systemd Periphery on komodo:
-   ```bash
-   ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=<new-version>"
-   ssh root@komodo "systemctl restart periphery"
-   ```
-6. Rebuild custom Docker Periphery for other 6 hosts: `km execute run-build periphery-custom`
-   - Then pull on each host (daily rebuild handles this, or manually trigger)
-7. Verify all healthy: `km list servers -a`
+**The version lives in THREE places that must all change.** Bumping only one is the
+most common way to get a deploy that silently reinstalls the old version:
+
+| File | Field | Why it's separate |
+|------|-------|-------------------|
+| `komodo-resources/variables.toml` | `KOMODO_VERSION` | Feeds `PERIPHERY_TAG` build arg via `[[VAR]]` |
+| `komodo-resources/builds.toml` | `image_tag` | **Hardcoded** — `[[VAR]]` interpolation does NOT apply here (docker validates the tag before interpolation runs) |
+| `stacks/komodo/core/.sops.env` | `KOMODO_VERSION` | Encrypted; update with `sops set`. Lives here, NOT in a stack `environment` block — see the env-file shadowing note below |
+
+```bash
+# 1. Bump all three (the encrypted one via sops set), commit, push
+sops set docker/stacks/komodo/core/.sops.env '["KOMODO_VERSION"]' '"<new>"'
+echo "" | km execute run-sync 'mohitsharma44/homeops'
+
+# 2. Pre-pull on the komodo host so a registry hiccup can't strand Core mid-deploy
+ssh root@komodo "docker pull ghcr.io/moghtech/komodo-core:<new>"
+
+# 3. Deploy Core manually (auto_update is disabled — Komodo cannot redeploy itself)
+km execute deploy-stack komodo-core
+#    A "401 Unauthorized" here is EXPECTED when the image actually changes: Core
+#    kills its own process mid-deploy, so the CLI's follow-up call fails. Always
+#    verify over SSH before reacting. If the container is left in `Created`, finish
+#    it by hand:  cd /etc/komodo/stacks/komodo-core/docker/stacks/komodo/core \
+#                 && docker compose -p komodo-core up -d
+
+# 4. Upgrade the local km CLI to match Core (a stale CLI gets schema-decode errors)
+gh release download v<new> --repo moghtech/komodo -p km-apple
+
+# 5. systemd Periphery on the komodo host — the `v` PREFIX IS MANDATORY
+ssh root@komodo "cp /usr/local/bin/periphery /usr/local/bin/periphery.<old>-bak"
+ssh root@komodo "curl -sSL https://raw.githubusercontent.com/moghtech/komodo/main/scripts/setup-periphery.py | python3 - --version=v<new>"
+ssh root@komodo "systemctl restart periphery"
+
+# 6. Rebuild the custom image, then PUSH IT BY HAND — run-build does NOT push
+km execute run-build periphery-custom
+ssh mohitsharma44@server04 "docker push mohitsharma44/komodo-periphery-sops:<new>"
+
+# 7. Bump the pin + pull/restart on each Docker Periphery host
+#    nvr, omni       -> /root/komodo-periphery/compose.yaml   (not in git)
+#    server04        -> ~/komodo-periphery/compose.yaml       (not in git)
+#    racknerd-aegis  -> docker/stacks/racknerd-aegis/periphery/compose.yaml (IN git)
+
+# 8. Verify
+km list servers -a
+```
+
+**Gotchas that have bitten this upgrade before:**
+
+- **`--version` needs the `v` prefix.** `--version=2.3.2` builds a 404 URL, and
+  setup-periphery.py **deletes the existing binary before downloading** — so a wrong
+  version string bricks the service. Back the binary up first, and sanity-check the
+  URL returns 200 before running it.
+- **Stale top-level `.env` shadowing.** If a stack ever had a TOML `environment`
+  block, Komodo wrote `/etc/komodo/stacks/<stack>/.env` and *keeps passing*
+  `--env-file` to compose even after the block is removed. That stale file shadows
+  the SOPS-decrypted compose-dir `.env`, so `${KOMODO_VERSION}` resolves to whatever
+  it said months ago and the deploy quietly reinstalls the old image. Check for it:
+  `ssh root@komodo 'ls -la /etc/komodo/stacks/komodo-core/.env'` — there should be
+  none. (Removed 2026-08-13; it had pinned Core to 2.2.0 since May.)
+- **VPS `aegis-periphery` is chicken-and-egg.** Deploying it recreates the very agent
+  Komodo is talking through, so the deploy reports failure and leaves the new container
+  `Created` under a hash-prefixed name. Recover:
+  `docker rm periphery && docker rename <hash>_periphery periphery && docker start periphery`.
+- **kasm / seaweedfs** are unreachable and will stay on the old version. That's accepted;
+  nothing is actively managed on either.
 
 ## Commands
 ```bash
