@@ -16,6 +16,13 @@ spec:
         namespace: metallb-system
       interval: 12h
   values:
+    # This cluster is pure L2 (one IPAddressPool + one L2Advertisement, no
+    # BGPPeer/BGPAdvertisement). Chart 0.16.0 made frr-k8s the default BGP
+    # backend and ships it enabled, so it must be turned off explicitly —
+    # speaker.frr.enabled only governs the older, now-deprecated FRR mode
+    # and does NOT suppress frr-k8s.
+    frrk8s:
+      enabled: false
     speaker:
       frr:
         enabled: false
