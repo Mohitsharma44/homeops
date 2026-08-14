@@ -16,7 +16,11 @@ spec:
         namespace: cert-manager
       interval: 12h
   values:
-    installCRDs: true
+    # Replaces the deprecated `installCRDs: true`, which is defined as exactly
+    # equivalent to crds.enabled + crds.keep. Verified byte-identical render.
+    crds:
+      enabled: true
+      keep: true
     prometheus:
       enabled: true
       servicemonitor:
