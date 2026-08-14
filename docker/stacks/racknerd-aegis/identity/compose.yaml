@@ -24,7 +24,7 @@ services:
         max-file: "3"
 
   pocketid:
-    image: ghcr.io/pocket-id/pocket-id:v2.7.0
+    image: ghcr.io/pocket-id/pocket-id:v2.13.0
     container_name: pocketid
     restart: unless-stopped
     networks:
