@@ -21,7 +21,7 @@ services:
         max-file: "3"
 
   gerbil:
-    image: fosrl/gerbil:1.4.0
+    image: fosrl/gerbil:1.4.3
     container_name: gerbil
     restart: unless-stopped
     networks:
