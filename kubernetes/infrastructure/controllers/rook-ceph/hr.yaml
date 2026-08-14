@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: rook-ceph
-      version: "1.19.x"
+      version: "1.20.x"
       sourceRef:
         kind: HelmRepository
         name: rook-release
