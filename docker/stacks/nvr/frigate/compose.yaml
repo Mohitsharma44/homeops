@@ -1,14 +1,18 @@
 services:
   frigate:
     container_name: frigate
-    image: ghcr.io/blakeblackshear/frigate:0.17.1
+    image: ghcr.io/blakeblackshear/frigate:0.17.2
     restart: unless-stopped
     privileged: true
     stop_grace_period: 30s
     shm_size: "512mb"
     devices:
+      # Coral TPU — used for object detection
       - /dev/apex_0:/dev/apex_0
-      - /dev/dri/renderD128:/dev/dri/renderD128
+      # NOTE: /dev/dri/renderD128 removed 2026-08-13. nvr is now QEMU VM 101 (was an
+      # LXC), so the pve host's render node is no longer visible inside the guest.
+      # hwaccel_args is commented out in config.yaml, so nothing was using it.
+      # Re-add only if GPU passthrough to VM 101 is configured AND hwaccel is enabled.
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./config:/config
