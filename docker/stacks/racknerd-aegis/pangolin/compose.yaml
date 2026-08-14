@@ -50,7 +50,7 @@ services:
         max-file: "3"
 
   traefik:
-    image: traefik:v3.7.1
+    image: traefik:v3.7.10
     container_name: pangolin-traefik
     restart: unless-stopped
     network_mode: service:gerbil
