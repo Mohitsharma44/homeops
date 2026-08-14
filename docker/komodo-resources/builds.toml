@@ -24,7 +24,7 @@ image_name = "mohitsharma44/komodo-periphery-sops"
 # predictable tag instead of :latest drift. Komodo's [[VAR]] interpolation
 # does NOT apply to image_tag (it's validated by docker before interpolation
 # runs), so this must be hardcoded — keep in sync with KOMODO_VERSION above.
-image_tag = "2.2.0"
+image_tag = "2.3.2"
 build_args = """
 PERIPHERY_TAG = [[KOMODO_VERSION]]
 """
