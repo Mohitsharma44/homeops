@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: rook-ceph-cluster
-      version: "1.20.x"
+      version: "1.19.x"
       sourceRef:
         kind: HelmRepository
         name: rook-release
@@ -26,19 +26,6 @@ spec:
     crds: CreateReplace # Upgrade CRDs on package update
   releaseName: rook-ceph-cluster
   values:
-    # Pin the Ceph image explicitly. The rook-ceph-cluster chart's DEFAULT
-    # cephImage.tag tracks the newest Ceph the chart supports, and it moved
-    # v19.2.4 (Squid) -> v20.2.2 (Tentacle) between chart 1.19.x and 1.20.x.
-    # Leaving this unset means a routine chart bump silently performs a Ceph
-    # MAJOR version upgrade across every daemon — not something that should
-    # ride along with a Rook control-plane hop. Rook 1.20 supports Squid
-    # v19.2.0+ and Tentacle v20.2.1+, so pinning to Squid is a supported
-    # combination, not a workaround.
-    # Ceph 19 -> 20 is tracked as its own deliberate upgrade.
-    cephImage:
-      repository: quay.io/ceph/ceph
-      tag: v19.2.4
-      allowUnsupported: false
     toolbox:
       enabled: true
     monitoring:
