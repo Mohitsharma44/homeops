@@ -23,6 +23,9 @@ mcp.json
 *.tmp
 *.bak
 
+# Wayfinder maps / local issue tracker (public repo — keep infra detail off GitHub)
+.scratch/
+
 # ── GSD baseline (auto-generated) ──
 .gsd
 *~
