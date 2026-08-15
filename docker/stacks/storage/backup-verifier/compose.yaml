@@ -1,0 +1,63 @@
+# Backup verifier on the storage host (UGREEN DXP6800 Pro).
+#
+# Two jobs:
+#   1. Promote backups that other hosts have uploaded into the landing share,
+#      but only after PRAGMA integrity_check passes on the archived copy.
+#   2. Expose the result as Prometheus metrics so a job that stops running goes
+#      red instead of quietly looking healthy.
+#
+# The trust boundary is the point of the two directories:
+#   /volume1/backup-landing  UGOS shared folder, writable by sender identities
+#                            (svc-server04). Nothing here is trusted yet.
+#   /volume1/backups         NOT a shared folder, so it does not appear in any
+#                            sender's SFTP chroot at all. Only this container
+#                            writes here. Deletion authority lives here alone.
+#
+# Nothing is installed on UGOS itself -- packages live inside the container.
+# UGOS is a vendor OS on squashfs + overlay; host-level changes get erased by
+# firmware updates.
+
+services:
+  backup-verifier:
+    image: alpine:3.21
+    container_name: backup-verifier
+    restart: unless-stopped
+    # Runs as root so it can read files owned by sender identities and own the
+    # archive itself. That asymmetry IS the protection: senders cannot write to
+    # or even see the archive.
+    user: "0:0"
+    volumes:
+      - /volume1/backup-landing:/landing
+      - /volume1/backups:/archive
+      - ./verify.sh:/usr/local/bin/verify.sh:ro
+    ports:
+      - "9101:9101"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apk add --no-cache sqlite
+        mkdir -p /run/metrics
+        printf '# no run yet\n' > /run/metrics/metrics
+        # First run must not be fatal: a bad file in the landing zone should be
+        # quarantined and reported, not stop the container from ever starting
+        # (and thus from ever serving the metric that would tell us).
+        /usr/local/bin/verify.sh || echo "initial verify run failed; continuing so metrics stay served"
+        # busybox httpd backgrounds itself; crond -f is what holds PID 1.
+        httpd -p 9101 -h /run/metrics
+        echo "$${CRON_SCHEDULE} /usr/local/bin/verify.sh > /proc/1/fd/1 2>/proc/1/fd/2" | crontab -
+        crond -f -l 2
+    environment:
+      # Every 15 minutes. The backup lands ~02:00; this is not about speed, it
+      # is so a failed verify is visible within the quarter hour rather than the
+      # next day, and so the metrics endpoint stays fresh for the alert.
+      - CRON_SCHEDULE=*/15 * * * *
+      - LANDING_DIR=/landing
+      - ARCHIVE_DIR=/archive
+      - METRICS_FILE=/run/metrics/metrics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

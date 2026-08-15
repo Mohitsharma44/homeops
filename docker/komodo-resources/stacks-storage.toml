@@ -1,0 +1,12 @@
+[[stack]]
+name = "backup-verifier"
+description = "Verifies backups landed from other hosts and promotes them into the archive; exposes Prometheus metrics on :9101"
+tags = ["storage", "backup"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/backup-verifier/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+auto_update = true
+# No pre_deploy hook: this stack has no secrets. It reads and writes local
+# paths only and does not authenticate anywhere.
