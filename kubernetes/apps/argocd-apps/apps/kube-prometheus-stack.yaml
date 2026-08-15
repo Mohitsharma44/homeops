@@ -927,6 +927,99 @@ spec:
                         severity: none
                       annotations:
                         summary: "Grafana Alerting is alive"
+                # Off-host backup health. Metrics come from the backup-verifier
+                # container on the storage host (UGREEN NAS), scraped by
+                # server04's Alloy and remote-written here.
+                #
+                # Both rules use noDataState: Alerting on purpose, unlike the
+                # rules above. For a backup, "the metric vanished" and "the
+                # backup stopped" are the same incident -- silence is exactly
+                # the failure mode being guarded against. The old WebDAV upload
+                # broke in ~2026-08-10 and nothing noticed for five days.
+                - orgId: 1
+                  name: infra-backup-health
+                  folder: Infra Backup Health
+                  interval: 300s
+                  rules:
+                    - uid: vaultwarden-backup-stale
+                      title: VaultwardenOffHostBackupStale
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 3600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Age, in seconds, of the newest VERIFIED backup in
+                            # the archive on the storage host.
+                            expr: 'time() - vaultwarden_backup_last_success_timestamp_seconds'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  # 30h: the job runs nightly at 02:00, so this
+                                  # fires the morning after a single miss rather
+                                  # than waiting for a second one.
+                                  params: [108000]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'No verified off-host backup of {{ "{{" }} $labels.service {{ "}}" }} from {{ "{{" }} $labels.host {{ "}}" }} in over 30 hours'
+                        description: 'Check the vaultwarden-backup container on server04 and the backup-verifier stack on the storage host. Files stuck in /volume1/backup-landing mean the verifier is not running; files in _quarantine mean a backup arrived corrupt.'
+                    - uid: backup-verifier-down
+                      title: BackupVerifierDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="backup-verifier"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "backup-verifier on the storage host is not being scraped"
+                        description: "Backups may still be landing in /volume1/backup-landing, but nothing is verifying or archiving them, and the freshness alert above is blind."
         alertmanager:
           config:
             global:
