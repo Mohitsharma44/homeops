@@ -9,9 +9,15 @@
 # The trust boundary is the point of the two directories:
 #   /volume1/backup-landing  UGOS shared folder, writable by sender identities
 #                            (svc-server04). Nothing here is trusted yet.
-#   /volume1/backups         NOT a shared folder, so it does not appear in any
-#                            sender's SFTP chroot at all. Only this container
-#                            writes here. Deletion authority lives here alone.
+#   /volume1/backup-archive  UGOS shared folder too, but granted to the admin
+#                            account ONLY (read-only) and to no sender. Only this
+#                            container writes here; deletion authority lives here
+#                            alone.
+#
+# UGOS's "read-only" share setting restricts UGOS's own access paths -- the File
+# Manager, SMB, SFTP. It does NOT restrict a root bind mount, which is how this
+# container reaches both directories. So the archive is browsable-but-immutable
+# from the UI while this container retains full write access. Verified 2026-08-15.
 #
 # Nothing is installed on UGOS itself -- packages live inside the container.
 # UGOS is a vendor OS on squashfs + overlay; host-level changes get erased by
@@ -28,7 +34,7 @@ services:
     user: "0:0"
     volumes:
       - /volume1/backup-landing:/landing
-      - /volume1/backups:/archive
+      - /volume1/backup-archive:/archive
       - ./verify.sh:/usr/local/bin/verify.sh:ro
     ports:
       - "9101:9101"
