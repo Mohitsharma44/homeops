@@ -39,6 +39,14 @@ region = "HomeLab"
 enabled = true
 
 [[server]]
+name = "storage"
+description = "UGREEN DXP6800 Pro — storage host (object store, RAID6 /volume1 + SSD /volume2)"
+tags = ["bare-metal", "storage"]
+[server.config]
+region = "HomeLab"
+enabled = true
+
+[[server]]
 name = "seaweedfs"
 description = "SeaweedFS distributed storage"
 tags = ["bare-metal", "storage"]
