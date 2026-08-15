@@ -37,7 +37,10 @@ services:
       - -c
       - |
         set -e
-        apk add --no-cache sqlite
+        # busybox-extras supplies the httpd applet; it is NOT in alpine's
+        # default busybox, and without it the container crash-loops on
+        # "httpd: not found".
+        apk add --no-cache sqlite busybox-extras
         mkdir -p /run/metrics
         printf '# no run yet\n' > /run/metrics/metrics
         # First run must not be fatal: a bad file in the landing zone should be
