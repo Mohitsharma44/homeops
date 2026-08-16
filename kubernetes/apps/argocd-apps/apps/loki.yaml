@@ -32,9 +32,12 @@ spec:
           storage:
             type: s3
             s3:
-              endpoint: seaweedfs.sharmamohit.com:8333
-              region: us-east-1
+              endpoint: objects.sharmamohit.com:3900
+              # Must match Garage's s3_region. Garage validates the SigV4 region,
+              # so "us-east-1" here fails authentication and looks like bad creds.
+              region: garage
               s3ForcePathStyle: true
+              # Plaintext on the LAN is a deliberate decision (ticket 04).
               insecure: true
             bucketNames:
               chunks: loki-chunks
@@ -50,16 +53,17 @@ spec:
             storageClass: ceph-block
             size: 10Gi
           extraEnv:
+            # Scoped key: reaches loki-chunks and loki-ruler, nothing else.
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: seaweedfs-s3-secret
-                  key: aws-access-key-id
+                  name: object-store-credentials
+                  key: loki-access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: seaweedfs-s3-secret
-                  key: aws-secret-access-key
+                  name: object-store-credentials
+                  key: loki-secret-access-key
           resources:
             requests:
               cpu: 200m
