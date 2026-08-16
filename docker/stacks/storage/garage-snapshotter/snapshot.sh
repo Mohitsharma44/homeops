@@ -49,7 +49,11 @@ if RESP=$(curl -sS -X POST --max-time 600 \
             "${ADMIN}/v2/CreateMetadataSnapshot?node=self" 2>&1); then
   # The endpoint returns 200 with a per-node success/error map, so an HTTP 200
   # is not by itself proof. Check that the error map is empty.
-  case "$RESP" in
+  #
+  # Whitespace is stripped first: the response is pretty-printed, so it reads
+  # '"error": {}' with a space. Matching the compact form against the raw body
+  # silently reported every successful snapshot as a failure.
+  case "$(printf '%s' "$RESP" | tr -d ' \t\n')" in
     *'"error":{}'*) TRIGGER_OK=1; log "snapshot created" ;;
     *) err "snapshot call returned 200 but reported an error: ${RESP}" ;;
   esac
