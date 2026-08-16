@@ -19,6 +19,20 @@ path = "docker/stacks/storage/garage"
 command = "sops-decrypt.sh"
 
 [[stack]]
+name = "garage-snapshotter"
+description = "Triggers Garage metadata snapshots on wall clock, prunes old ones, and exports snapshot freshness on :9102"
+tags = ["storage", "object-store", "backup"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/garage-snapshotter/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+auto_update = true
+[stack.config.pre_deploy]
+path = "docker/stacks/storage/garage-snapshotter"
+command = "sops-decrypt.sh"
+
+[[stack]]
 name = "backup-verifier"
 description = "Verifies backups landed from other hosts and promotes them into the archive; exposes Prometheus metrics on :9101"
 tags = ["storage", "backup"]

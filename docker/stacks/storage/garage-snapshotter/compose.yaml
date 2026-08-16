@@ -1,0 +1,69 @@
+# Metadata snapshots for the object store, on wall clock, plus a freshness
+# metric so a snapshotter that stops running goes red instead of quietly
+# looking healthy.
+#
+# Two things make this necessary rather than nice to have:
+#   - Garage's own snapshot timer resets on every restart and never persists,
+#     so a restart-happy container snapshots never. Ticket 10 found that no
+#     snapshot had EVER been taken despite the config being correct.
+#   - Garage exports no snapshot metric at all, in any of its 44 metric
+#     families, so freshness has to be measured on the filesystem.
+#
+# network_mode: host so the admin API is reachable at 127.0.0.1:3903 without
+# depending on Docker DNS or the LAN gateway, which intercepts DNS here. It also
+# means the metrics port below is bound directly on the host.
+#
+# Nothing is installed on UGOS itself. UGOS is a vendor OS on squashfs +
+# overlay; host-level changes get erased by firmware updates.
+
+services:
+  garage-snapshotter:
+    image: alpine:3.21
+    container_name: garage-snapshotter
+    network_mode: host
+    restart: unless-stopped
+    # Root so it can read and prune snapshot directories written by Garage,
+    # which runs as root.
+    user: "0:0"
+    # Supplies GARAGE_ADMIN_TOKEN, decrypted by the pre_deploy hook.
+    env_file: .env
+    volumes:
+      # Read-write: this container prunes as well as measures. It is the only
+      # thing that deletes here.
+      - /volume2/object-store-snapshots:/snapshots
+      - ./snapshot.sh:/usr/local/bin/snapshot.sh:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # busybox-extras supplies the httpd applet; it is NOT in alpine's
+        # default busybox, and without it the container crash-loops on
+        # "httpd: not found". curl is needed because busybox wget cannot POST.
+        apk add --no-cache curl busybox-extras
+        mkdir -p /run/metrics
+        printf '# no run yet\n' > /run/metrics/metrics
+        # The first run must not be fatal. A failed snapshot should be reported
+        # through the metric, not stop the container from ever starting -- and
+        # thus from ever serving the metric that would tell us.
+        /usr/local/bin/snapshot.sh || echo "initial snapshot run failed; continuing so metrics stay served"
+        # busybox httpd backgrounds itself; crond -f is what holds PID 1.
+        httpd -p 9102 -h /run/metrics
+        echo "$${CRON_SCHEDULE} /usr/local/bin/snapshot.sh > /proc/1/fd/1 2>/proc/1/fd/2" | crontab -
+        crond -f -l 2
+    environment:
+      # Every 6 hours, matching Garage's own (unreliable) interval. The alert
+      # fires past 12h, so a single miss is tolerated and two are not.
+      - CRON_SCHEDULE=17 */6 * * *
+      - SNAPSHOT_DIR=/snapshots
+      - GARAGE_ADMIN_URL=http://127.0.0.1:3903
+      # 12 snapshots at 6h apart is 3 days of history. Snapshots are full copies
+      # of the LMDB, not increments -- ~450 MB each at 200k objects -- so this
+      # is a real space decision, not a formality.
+      - SNAPSHOT_KEEP=12
+      - METRICS_FILE=/run/metrics/metrics
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
