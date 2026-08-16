@@ -1,4 +1,24 @@
 [[stack]]
+name = "garage"
+description = "The object store. S3 on :3900, admin API on :3903, RPC on :3901. Serves Loki, Tempo and Thanos."
+tags = ["storage", "object-store"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/garage/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+# Safe to auto-redeploy: every byte of state is in a bind mount, so a recreated
+# container reopens the same LMDB, the same node identity and the same layout.
+auto_update = true
+# No `environment` block on purpose. One would make Komodo write a top-level
+# .env and keep passing --env-file forever after, which shadows the
+# SOPS-decrypted .env in the compose directory. That trap pinned Komodo Core to
+# a stale version for three months.
+[stack.config.pre_deploy]
+path = "docker/stacks/storage/garage"
+command = "sops-decrypt.sh"
+
+[[stack]]
 name = "backup-verifier"
 description = "Verifies backups landed from other hosts and promotes them into the archive; exposes Prometheus metrics on :9101"
 tags = ["storage", "backup"]

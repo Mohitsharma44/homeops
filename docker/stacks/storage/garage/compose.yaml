@@ -1,0 +1,39 @@
+# The object store (Garage) on the storage host (UGREEN DXP6800 Pro).
+#
+# Serves Loki, Tempo, the Thanos storegateway and the Prometheus Thanos sidecar
+# at objects.sharmamohit.com:3900, plaintext, LAN only. There is deliberately no
+# public DNS record for objects. -- see ticket 04.
+#
+# network_mode: host because Garage's RPC layer advertises rpc_public_addr to
+# peers; NAT between the advertised address and the listener is a class of
+# problem not worth having on a single-node store.
+#
+# Nothing is installed on UGOS itself. UGOS is a vendor OS on squashfs + overlay;
+# host-level changes get erased by firmware updates.
+
+services:
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: garage
+    network_mode: host
+    restart: unless-stopped
+    # Decrypted from .sops.env by the pre_deploy hook. Supplies GARAGE_RPC_SECRET,
+    # GARAGE_ADMIN_TOKEN and GARAGE_METRICS_TOKEN, which is why garage.toml holds
+    # no secrets and can sit in a public repo.
+    env_file: .env
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      # meta and data share md1 (RAID6, 4x 6TB). Both are inside the UGOS share
+      # "object-store" so they are visible in File Manager.
+      - /volume1/object-store/meta:/var/lib/garage/meta
+      - /volume1/object-store/data:/var/lib/garage/data
+      # Snapshots live on md2 (RAID1 SSD) so a metadata copy does not share an
+      # array with the metadata it protects.
+      - /volume2/object-store-snapshots:/var/lib/garage/snapshots
+    environment:
+      - RUST_LOG=garage=info
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

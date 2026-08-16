@@ -1,0 +1,62 @@
+# Garage v2.3.0 -- the object store, on the storage host (UGREEN DXP6800 Pro).
+#
+# This file holds NO secrets. rpc_secret, admin_token and metrics_token come from
+# the environment (GARAGE_RPC_SECRET / GARAGE_ADMIN_TOKEN / GARAGE_METRICS_TOKEN,
+# supported since v0.8.2), which Komodo's pre_deploy hook decrypts out of
+# .sops.env. That is why this file can live in a public repo.
+#
+# Paths below are CONTAINER paths. The host side lives in the compose file.
+# Do not "fix" a path here to move storage -- move the bind mount instead.
+
+replication_factor = 1
+consistency_mode = "consistent"
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+metadata_snapshots_dir = "/var/lib/garage/snapshots"
+
+# metadata_dir is on /volume1 (RAID6 HDD), not /volume2 (RAID1 SSD). An early
+# session concluded /volume2 was ~1000x slower; that comparison was invalid (it
+# measured a loaded volume against an idle one) and is retracted. The real reason
+# to stay on /volume1 is that it degrades gracefully under sustained churn
+# (26 ms -> 58 ms) where /volume2 collapsed to ~4.6 s. Real load is 0.15 ops/s
+# against ~2 obj/s of measured capacity, so the choice is not on the critical
+# path. Revisit only if write latency disappoints.
+#
+# Snapshots deliberately land on the OTHER array (/volume2), so a copy does not
+# share a failure domain with the metadata it protects.
+
+# Costs ~220x throughput (2 obj/s vs 291) and is worth it: this store has no
+# replica, so a torn write has nothing to heal from.
+metadata_fsync = true
+data_fsync = false
+
+# DO NOT CHANGE WITHOUT A RESTART TEST. A short interval (4m and 240s both
+# verified) crash-loops Garage at startup, and the panic names table/merkle.rs,
+# an unrelated subsystem. 6h is the only value verified safe. The failure appears
+# only at the NEXT restart, possibly long after the edit.
+#
+# This timer is also not trustworthy on its own: the worker schedules off
+# Instant::now() at process start (first fire at interval/2) and never persists,
+# so every restart resets it. Snapshots are triggered externally on wall clock;
+# freshness is alarmed on the filesystem, because Garage exports no snapshot
+# metric in any of its 44 metric families.
+metadata_auto_snapshot_interval = "6h"
+
+db_engine = "lmdb"
+
+block_size = "10M"
+block_max_concurrent_writes_per_request = 5
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "objects.sharmamohit.com:3901"
+
+[s3_api]
+# Consumers must sign with this region. Garage validates the SigV4 region, so a
+# consumer sending "us-east-1" gets an auth failure, not a warning.
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+api_bind_addr = "[::]:3903"
+metrics_require_token = true
