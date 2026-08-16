@@ -1020,6 +1020,438 @@ spec:
                       annotations:
                         summary: "backup-verifier on the storage host is not being scraped"
                         description: "Backups may still be landing in /volume1/backup-landing, but nothing is verifying or archiving them, and the freshness alert above is blind."
+                # Object store health. Metrics come from Garage's admin API on
+                # the storage host and from the garage-snapshotter container
+                # beside it, both scraped by server04's Alloy and remote-written
+                # here. server04 does the scraping because it already
+                # remote_writes and the storage host runs no Alloy of its own.
+                #
+                # The bar these rules have to clear: the SeaweedFS object store
+                # died and Loki, Tempo and Thanos were down for 53 days before
+                # anyone noticed, because every Alloy agent stayed healthy and
+                # kept shipping. "Container up" would not have caught it either
+                # -- ticket 10 produced a store that was reachable, logged no
+                # errors and had lost every bucket and key.
+                #
+                # noDataState is Alerting throughout, as with the backup rules:
+                # for a store nothing else has redundancy for, "the metric
+                # vanished" and "the store is gone" are the same incident, and
+                # silence is the failure mode being guarded against.
+                - orgId: 1
+                  name: infra-object-store
+                  folder: Infra Object Store
+                  interval: 300s
+                  rules:
+                    - uid: object-store-down
+                      title: ObjectStoreDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="garage"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "The object store is not answering its admin API"
+                        description: "Garage on the storage host is unreachable or its metrics endpoint is failing. Loki, Tempo and Thanos all write here; expect them to start failing if this persists. Check the garage stack in Komodo and the container on 192.168.11.244."
+                    - uid: object-store-unavailable
+                      title: ObjectStoreUnavailable
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Garage's own verdict on whether it can serve
+                            # requests at all, which is stronger than the
+                            # process being alive.
+                            expr: 'cluster_available'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 5m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "The object store says it cannot serve requests"
+                        description: "cluster_available is 0. Garage is running but reports it cannot satisfy reads or writes. Check disk on /volume1 and the layout via the admin API on port 3903."
+                    - uid: object-store-buckets-missing
+                      title: ObjectStoreBucketsMissing
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Four buckets are expected: loki-chunks,
+                            # loki-ruler, tempo-traces, thanos-metrics.
+                            #
+                            # This rule exists because of a real failure mode,
+                            # not a hypothetical one. Following upstream's
+                            # documented restore procedure produced a store
+                            # that started with ZERO errors, every table at 0,
+                            # no buckets and no keys. Nothing else here would
+                            # have noticed: the container was up, the endpoint
+                            # answered, and the logs were clean.
+                            expr: 'table_size{table_name="bucket_v2"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [4]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "The object store has lost a bucket"
+                        description: "Fewer than the expected four buckets exist. This is what a silently emptied store looks like -- reachable, no errors, no data. Do NOT restart anything first; read .scratch/object-store-rehome/issues/10-restore-runbook.md, and note that upstream's own restore documentation destroys the store."
+                    - uid: object-store-keys-missing
+                      title: ObjectStoreKeysMissing
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Three scoped keys are expected: loki, tempo,
+                            # thanos. Garage reveals a secret key exactly once,
+                            # at creation, so a lost key means reprovisioning
+                            # and re-encrypting the consumer secrets.
+                            expr: 'table_size{table_name="key"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [3]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "The object store has lost an access key"
+                        description: "Fewer than the expected three scoped keys exist. Consumers will start failing authentication. Rebuild with .scratch/object-store-rehome/09-tooling/provision_consumers.py, then re-encrypt object-store-credentials and thanos-objstore-secret."
+                    - uid: object-store-server-errors
+                      title: ObjectStoreServerErrors
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 900
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # 5xx only. 403 and 404 are normal traffic here --
+                            # the scoped keys deliberately produce 403s when a
+                            # consumer probes a bucket it does not own, and
+                            # Thanos and Loki both HEAD objects that do not
+                            # exist yet as a matter of course.
+                            expr: 'sum(rate(api_s3_error_counter{status_code=~"5.."}[10m]))'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0.05]
+                            refId: C
+                      for: 15m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "The object store is returning server errors"
+                        description: "Garage is answering S3 requests with 5xx. The store is up but failing requests, so consumers are losing writes. Check container logs and disk health on the storage host."
+                    - uid: object-store-metadata-disk-low
+                      title: ObjectStoreMetadataDiskLow
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 900
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Metadata, not data. The LMDB is the part with no
+                            # redundancy -- replication_factor is 1 -- and a
+                            # full metadata volume is how an LMDB gets
+                            # corrupted rather than merely full.
+                            expr: 'garage_local_disk_avail{volume="metadata"} / garage_local_disk_total{volume="metadata"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [0.1]
+                            refId: C
+                      for: 30m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "The object store's metadata volume is nearly full"
+                        description: "Under 10% free on /volume1, which holds the LMDB. The index has no replica, so filling this volume risks corrupting it rather than simply refusing writes."
+                    - uid: object-store-resync-errors
+                      title: ObjectStoreResyncErrors
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 1800
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Blocks whose last integrity resync failed. Stayed
+                            # at 0 through 201k objects of load testing and two
+                            # SIGKILLs, so anything above 0 is meaningful and
+                            # not background noise.
+                            expr: 'block_resync_errored_blocks'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 30m
+                      noDataState: NoData
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "The object store cannot verify some data blocks"
+                        description: "block_resync_errored_blocks is above zero, meaning Garage failed to re-verify stored blocks. This is the closest thing to a silent-corruption signal the store offers. Check disk and dmesg on the storage host."
+                    - uid: garage-snapshot-stale
+                      title: GarageSnapshotStale
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 3600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Age, in seconds, of the newest metadata snapshot
+                            # on disk. Measured on the filesystem because
+                            # Garage exports no snapshot metric at all.
+                            expr: 'time() - garage_snapshot_newest_timestamp_seconds'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            # 12h = twice the 6h snapshot interval, so a single
+                            # missed run is tolerated and two are not.
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [43200]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "No metadata snapshot of the object store in over 12 hours"
+                        description: "The LMDB index has no replica, so a snapshot is its only protection. Garage's own snapshot timer resets on every restart and cannot be relied on -- that is why garage-snapshotter triggers on wall clock. Check that container on the storage host."
+                    - uid: garage-snapshotter-down
+                      title: GarageSnapshotterDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="garage-snapshotter"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "garage-snapshotter on the storage host is not being scraped"
+                        description: "Snapshots may have stopped being taken, and the staleness alert above is blind while this is down. Check the garage-snapshotter stack in Komodo."
+                    - uid: loki-not-ingesting
+                      title: LokiNotIngesting
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 1800
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # The consumer-side half, and the one that would
+                            # have fired on day one of the SeaweedFS outage.
+                            # Watching the object store catches the store
+                            # breaking; this catches logging being broken for
+                            # ANY reason, including reasons nobody predicted.
+                            expr: 'sum(rate(loki_distributor_bytes_received_total[15m]))'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 30m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: "Loki has ingested no logs in 30 minutes"
+                        description: "Every Alloy agent can look perfectly healthy while this is true -- that is exactly how the last outage hid for 53 days. Either Loki is down, or it cannot write to the object store. Check loki-0 in the monitoring namespace first."
         alertmanager:
           config:
             global:
