@@ -9,6 +9,9 @@ resources:
   - monitoring-ns.yaml
   - seaweedfs-s3-secret.yaml
   - thanos-objstore-secret.yaml
+  # Replaces seaweedfs-s3-secret once the consumers are cut over (ticket 06).
+  # Nothing references it yet, so applying it is inert.
+  - object-store-credentials.yaml
   - monitoring-basic-auth-secret.yaml
   - alertmanager-slack-secret.yaml
   - grafana-admin-secret.yaml
