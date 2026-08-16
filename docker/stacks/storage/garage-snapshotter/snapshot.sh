@@ -1,6 +1,7 @@
 #!/bin/sh
-# Trigger a Garage metadata snapshot on wall clock, prune old ones, and export
-# the age of the newest as Prometheus metrics.
+# Trigger a Garage metadata snapshot on wall clock and export the age of the
+# newest as Prometheus metrics. Retention is Garage's job, not ours -- see the
+# "No prune here" note below.
 #
 # Why this exists at all, rather than trusting Garage's own
 # metadata_auto_snapshot_interval = "6h":
@@ -26,7 +27,6 @@ set -eu
 
 SNAP_DIR="${SNAPSHOT_DIR:-/snapshots}"
 ADMIN="${GARAGE_ADMIN_URL:-http://127.0.0.1:3903}"
-KEEP="${SNAPSHOT_KEEP:-12}"
 METRICS_FILE="${METRICS_FILE:-/run/metrics/metrics}"
 
 log() { echo "[$(date -Is)] $*"; }
@@ -62,40 +62,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Prune.
+# No prune here, deliberately.
 #
-# Snapshots are full copies of the LMDB, not increments -- at the measured
-# 2322 bytes/object they reach ~450 MB at 200k objects, so four a day fills the
-# array without this. Names are ISO-8601 UTC timestamps, which sort
-# lexicographically in time order, so "all but the last N" is just a sort.
+# Garage does it: "Garage keeps only the two most recent snapshots of the
+# metadata DB and deletes older ones automatically." Verified on this host --
+# creating a third snapshot silently removed the oldest, with nothing of ours
+# running. An earlier version of this script carried a keep-12 prune that could
+# never fire, which is worse than no prune: it reads as retention control that
+# does not exist.
 #
-# Pruning runs even when the trigger failed: keeping a fixed count is safe
-# either way, and skipping it on failure would let a store that cannot snapshot
-# also stop reclaiming space.
+# The consequence is worth stating plainly: retention is TWO snapshots, so with
+# a 6h cron the history is about six hours. Corruption discovered later than
+# that is present in both copies. Accepted, on the same reasoning ticket 10 used
+# to accept no off-box copy: the store's content is the disposable observability
+# index, and the only irreplaceable part -- four buckets and three scoped keys --
+# is recreated by provision_consumers.py in about a minute. Revisit if a
+# non-disposable consumer ever lands here.
 # ---------------------------------------------------------------------------
-PRUNED=0
-if [ -d "${SNAP_DIR}" ]; then
-  # -maxdepth 1 -mindepth 1 so the snapshot directory itself is never a
-  # candidate. Anchored to -type d: a stray file here must not be deleted
-  # silently, it should be noticed.
-  TOTAL=$(find "${SNAP_DIR}" -mindepth 1 -maxdepth 1 -type d | wc -l)
-  if [ "${TOTAL}" -gt "${KEEP}" ]; then
-    DROP=$((TOTAL - KEEP))
-    find "${SNAP_DIR}" -mindepth 1 -maxdepth 1 -type d | sort | head -n "${DROP}" |
-      while IFS= read -r old; do
-        # Belt and braces: never recurse outside the snapshot directory.
-        case "$old" in
-          "${SNAP_DIR}"/*)
-            rm -rf "$old" && log "pruned $(basename "$old")"
-            ;;
-          *)
-            err "refusing to prune path outside ${SNAP_DIR}: ${old}"
-            ;;
-        esac
-      done
-    PRUNED="${DROP}"
-  fi
-fi
 
 # ---------------------------------------------------------------------------
 # Metrics. Same reasoning as backup-verifier: a text file served by busybox
@@ -136,13 +119,10 @@ TMP="${METRICS_FILE}.tmp"
   echo "# HELP garage_snapshot_trigger_success Whether the last snapshot trigger succeeded."
   echo "# TYPE garage_snapshot_trigger_success gauge"
   echo "garage_snapshot_trigger_success ${TRIGGER_OK}"
-  echo "# HELP garage_snapshot_pruned_last_run Snapshots deleted on the last run."
-  echo "# TYPE garage_snapshot_pruned_last_run gauge"
-  echo "garage_snapshot_pruned_last_run ${PRUNED}"
   echo "# HELP garage_snapshot_run_timestamp_seconds Unix time this snapshotter last completed a run."
   echo "# TYPE garage_snapshot_run_timestamp_seconds gauge"
   echo "garage_snapshot_run_timestamp_seconds $(date +%s)"
 } > "$TMP"
 mv "$TMP" "${METRICS_FILE}"
 
-log "run complete: trigger_ok=${TRIGGER_OK} count=${COUNT} pruned=${PRUNED} newest=${NEWEST}"
+log "run complete: trigger_ok=${TRIGGER_OK} count=${COUNT} newest=${NEWEST}"

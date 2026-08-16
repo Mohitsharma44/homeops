@@ -22,15 +22,16 @@ services:
     container_name: garage-snapshotter
     network_mode: host
     restart: unless-stopped
-    # Root so it can read and prune snapshot directories written by Garage,
-    # which runs as root.
+    # Root so it can stat snapshot directories written by Garage, which runs as
+    # root and creates them mode 000.
     user: "0:0"
     # Supplies GARAGE_ADMIN_TOKEN, decrypted by the pre_deploy hook.
     env_file: .env
     volumes:
-      # Read-write: this container prunes as well as measures. It is the only
-      # thing that deletes here.
-      - /volume2/object-store-snapshots:/snapshots
+      # Read-only: Garage owns retention here (it keeps the two most recent
+      # snapshots and deletes older ones itself), so this container only
+      # measures. Nothing of ours deletes in this directory.
+      - /volume2/object-store-snapshots:/snapshots:ro
       - ./snapshot.sh:/usr/local/bin/snapshot.sh:ro
     entrypoint:
       - /bin/sh
@@ -57,10 +58,6 @@ services:
       - CRON_SCHEDULE=17 */6 * * *
       - SNAPSHOT_DIR=/snapshots
       - GARAGE_ADMIN_URL=http://127.0.0.1:3903
-      # 12 snapshots at 6h apart is 3 days of history. Snapshots are full copies
-      # of the LMDB, not increments -- ~450 MB each at 200k objects -- so this
-      # is a real space decision, not a formality.
-      - SNAPSHOT_KEEP=12
       - METRICS_FILE=/run/metrics/metrics
     logging:
       driver: "json-file"
