@@ -1222,7 +1222,18 @@ spec:
                             # consumer probes a bucket it does not own, and
                             # Thanos and Loki both HEAD objects that do not
                             # exist yet as a matter of course.
-                            expr: 'sum(rate(api_s3_error_counter{status_code=~"5.."}[10m]))'
+                            #
+                            # `or vector(0)` is load-bearing. Garage only
+                            # creates a counter series once that endpoint and
+                            # status code have actually occurred, so with no
+                            # 5xx ever recorded the selector matches NOTHING
+                            # and the query returns an empty vector -- which
+                            # Grafana turns into a DatasourceNoData alert that
+                            # still honours `for` and still notifies. Observed:
+                            # this rule went Pending on a completely healthy
+                            # store. The fallback makes "no errors" evaluate to
+                            # 0 instead of to nothing.
+                            expr: 'sum(rate(api_s3_error_counter{status_code=~"5.."}[10m])) or vector(0)'
                             refId: A
                         - refId: B
                           datasourceUid: __expr__
