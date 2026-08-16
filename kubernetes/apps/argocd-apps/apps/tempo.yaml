@@ -21,10 +21,14 @@ spec:
               backend: s3
               s3:
                 bucket: tempo-traces
-                endpoint: seaweedfs.sharmamohit.com:8333
+                endpoint: objects.sharmamohit.com:3900
+                # Plaintext on the LAN is a deliberate decision (ticket 04), not an
+                # oversight. There is no public DNS record for objects.
                 insecure: true
                 forcepathstyle: true
-                region: us-east-1
+                # Must match Garage's s3_region. Garage validates the SigV4 region,
+                # so "us-east-1" here fails authentication and looks like bad creds.
+                region: garage
           receivers:
             otlp:
               protocols:
@@ -40,16 +44,17 @@ spec:
             limits:
               memory: 512Mi
           extraEnv:
+            # Scoped key: reaches tempo-traces and nothing else.
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: seaweedfs-s3-secret
-                  key: aws-access-key-id
+                  name: object-store-credentials
+                  key: tempo-access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: seaweedfs-s3-secret
-                  key: aws-secret-access-key
+                  name: object-store-credentials
+                  key: tempo-secret-access-key
         persistence:
           enabled: true
           storageClassName: ceph-block
