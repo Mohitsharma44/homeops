@@ -44,7 +44,7 @@ Three homelab servers (pve, truenas, server04) have no hardware health monitorin
 
 ## Architecture Overview
 
-All 3 bare-metal hosts run their own Alloy instance (systemd) alongside smartctl_exporter. This ensures host-level metrics come from the actual hardware, decouples monitoring from Docker health, and keeps the approach consistent across all hosts. Existing Komodo-managed Alloy instances on other Docker hosts (komodo LXC, seaweedfs VM, etc.) continue monitoring their own guest-level metrics separately — they are unaffected.
+All 3 bare-metal hosts run their own Alloy instance (systemd) alongside smartctl_exporter. This ensures host-level metrics come from the actual hardware, decouples monitoring from Docker health, and keeps the approach consistent across all hosts. Existing Komodo-managed Alloy instances on other Docker hosts (komodo LXC, nvr, omni, etc.) continue monitoring their own guest-level metrics separately — they are unaffected.
 
 ```
 pve (192.168.11.13)          truenas (192.168.11.15)       server04 (192.168.11.17)
@@ -79,7 +79,7 @@ pve (192.168.11.13)          truenas (192.168.11.15)       server04 (192.168.11.
            |
     Phone push notification
 
-Note: komodo Alloy (LXC) and seaweedfs Alloy (VM) continue running the shared
+Note: komodo Alloy (LXC) and the other Komodo-managed Alloy stacks continue running the shared
 Docker compose config unchanged — they monitor their own guest-level metrics.
 server04's Komodo-managed Docker Alloy (server04-alloy stack) has been
 REPLACED by the systemd Alloy and removed from stacks-server04.toml.
@@ -756,12 +756,12 @@ Phase 5 ───── ZFS pool health via truenas Alloy  ✅ DONE
 | 11 | Slack | Create incoming webhook app, copy webhook URL for Alertmanager config |
 | 12 | HA | Create webhook automation for Alertmanager notifications |
 
-**Note**: komodo and seaweedfs Alloy stacks continue using the shared compose config unchanged — no overrides needed for those hosts.
+**Note**: the komodo, nvr, kasm and omni Alloy stacks continue using the shared compose config unchanged — no overrides needed for those hosts.
 
 ### Credential Rotation Procedure
 
 The Prometheus/Loki basic auth credentials are stored in two places:
-1. **Docker Alloy instances** (komodo, nvr, kasm, omni, seaweedfs, racknerd-aegis): SOPS-encrypted `.sops.env` in git (decrypted by Komodo pre_deploy)
+1. **Docker Alloy instances** (komodo, nvr, kasm, omni, racknerd-aegis): SOPS-encrypted `.sops.env` in git (decrypted by Komodo pre_deploy)
 2. **Systemd Alloy instances** (pve, truenas, server04): Plain-text `/etc/alloy/env` (mode 0600, manually placed)
 
 If credentials need to be rotated:
@@ -793,7 +793,7 @@ If credentials need to be rotated:
 
 ## Known Limitations
 
-**Grafana "metric might not be a counter" warnings on remote-write metrics**: Grafana queries the Prometheus metadata API to determine metric types, but this API only returns metadata for scraped targets — not for metrics arriving via remote_write. All infrastructure host metrics (pve, truenas, server04, kasm, komodo, nvr, omni, seaweedfs, racknerd-aegis) arrive via Alloy remote_write and lack type metadata in Prometheus. This causes Grafana to show warnings when `rate()` is used on counter metrics like `node_zfs_arc_hits`, `node_zfs_zpool_dataset_reads`, etc. The warnings are cosmetic — `rate()` is correct for these metrics. Tested with Remote Write v2 protocol (Alloy v1.14.0 + Prometheus 3.9.1) — metadata is included in the wire protocol but Prometheus still does not surface it via the metadata API.
+**Grafana "metric might not be a counter" warnings on remote-write metrics**: Grafana queries the Prometheus metadata API to determine metric types, but this API only returns metadata for scraped targets — not for metrics arriving via remote_write. All infrastructure host metrics (pve, server04, kasm, komodo, nvr, omni, storage, racknerd-aegis) arrive via Alloy remote_write and lack type metadata in Prometheus. This causes Grafana to show warnings when `rate()` is used on counter metrics like `node_zfs_arc_hits`, `node_zfs_zpool_dataset_reads`, etc. The warnings are cosmetic — `rate()` is correct for these metrics. Tested with Remote Write v2 protocol (Alloy v1.14.0 + Prometheus 3.9.1) — metadata is included in the wire protocol but Prometheus still does not surface it via the metadata API.
 
 **TrueNAS Grafana dashboard**: Deployed at uid `truenas-health` with ZFS pool health, ARC cache, SMART disk health, system resources, and correlated Loki journal logs.
 

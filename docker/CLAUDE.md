@@ -12,13 +12,13 @@ komodo-resources/          # TOML declarations (synced by Komodo)
 ├── procedures.toml        # Scheduled jobs (backup, rebuild, auto-update)
 └── stacks-{host}.toml     # Stack definitions per host
 stacks/                    # Compose files + encrypted secrets
-├── shared/alloy/          # Shared Alloy compose (6 LAN hosts)
+├── shared/alloy/          # Shared Alloy compose (4 LAN hosts: komodo, nvr, kasm, omni)
 ├── racknerd-aegis/alloy-override/  # VPS-specific Alloy (adds CrowdSec scrape)
 └── {host}/{service}/      # Per-host compose + .sops.env
 periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 ```
 
-## Hosts & Stacks (19 total)
+## Hosts & Stacks
 
 | Host | IP | SSH | Stacks |
 |------|----|-----|--------|
@@ -27,8 +27,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
 | server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden |
-| seaweedfs | 192.168.11.133 | mohitsharma44@seaweedfs | seaweedfs, seaweedfs-alloy |
-| storage | 192.168.11.244 | mohitsharma44@192.168.11.244 | garage, backup-verifier |
+| storage | 192.168.11.244 | mohitsharma44@192.168.11.244 | garage, garage-snapshotter, backup-verifier |
 | racknerd-aegis | <VPS_PUBLIC_IP> | <vps-user>@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
 
 **Note**: server04 monitoring uses a systemd Alloy service (not a Komodo-managed Docker stack). See `docs/hardware-monitoring-plan.md` for details.
@@ -37,13 +36,13 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 - **UI**: https://komodo.sharmamohit.com
 - **API**: http://komodo.sharmamohit.com:9120 (HTTP, not HTTPS)
 - **CLI**: `km`
-- **Periphery**: v2.3.2 on the 5 reachable hosts; kasm and seaweedfs are stranded at 2.2.0 (both hosts unreachable — they converge on next boot). All 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
+- **Periphery**: v2.3.2 on the 6 reachable hosts; kasm is stranded at 2.2.0 (host unreachable — it converges on next boot). All 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
 
 ## Secrets (SOPS + age)
 
 `.sops.env` (or `.sops.json`) files live next to each `compose.yaml`. At deploy time, Komodo's `pre_deploy` hook runs `sops-decrypt.sh` on the Periphery agent, decrypting `*.sops.env` → `*.env`. Compose reads via `env_file: .env`.
 
-Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, seaweedfs (`s3.sops.json`), aegis-gateway, aegis-pangolin, aegis-identity, aegis-newt. Only frigate and aegis-periphery have no secrets.
+Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik, vaultwarden, garage, garage-snapshotter, aegis-gateway, aegis-pangolin, aegis-identity, aegis-newt. Only frigate and aegis-periphery have no secrets.
 
 ## Custom Periphery Image
 `mohitsharma44/komodo-periphery-sops:latest` — upstream Periphery + sops + age + `sops-decrypt.sh`. Built on server04 via `km execute run-build periphery-custom`. Dockerfile at `periphery/Dockerfile`.
@@ -55,7 +54,8 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 |------|------|
 | komodo | systemd service — `/etc/komodo/periphery.config.toml` |
 | nvr, kasm, omni | `/root/komodo-periphery/compose.yaml` |
-| server04, seaweedfs | `~/komodo-periphery/compose.yaml` |
+| server04 | `~/komodo-periphery/compose.yaml` |
+| storage | `/volume2/komodo/periphery/compose.yaml` — everything on `/volume2`, never `/etc`, because `/` is a firmware-replaceable overlay |
 | racknerd-aegis | Komodo-managed stack (`aegis-periphery`) — isolated on `newt-periphery` network |
 
 ## Adding a New Stack
@@ -66,7 +66,7 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 ## Gotchas
 - **pre_deploy.path required**: Must point to the compose directory so `sops-decrypt.sh` finds `.sops.env`. Without it, runs from repo root.
 - **DNS on server04**: Periphery compose needs `dns: ["192.168.11.1"]` — Docker embedded DNS broken.
-- **Age key ownership**: Must be `root:root` with `600` on all hosts. Non-root SSH hosts (server04/seaweedfs) may need `sudo chown`.
+- **Age key ownership**: Must be `root:root` with `600` on all hosts. Non-root SSH hosts (server04, storage) may need `sudo chown`.
 - **ResourceSync self-reference**: `sync.toml` must define itself to avoid self-deletion (`delete=true`).
 - **KASM**: Installer-managed — only Newt is Komodo-managed.
 - **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
@@ -161,8 +161,8 @@ km list servers -a
   Komodo is talking through, so the deploy reports failure and leaves the new container
   `Created` under a hash-prefixed name. Recover:
   `docker rm periphery && docker rename <hash>_periphery periphery && docker start periphery`.
-- **kasm / seaweedfs** are unreachable and will stay on the old version. That's accepted;
-  nothing is actively managed on either.
+- **kasm** is unreachable and will stay on the old version. That's accepted; nothing is
+  actively managed on it.
 
 ## Commands
 ```bash

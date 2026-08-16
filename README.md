@@ -11,11 +11,11 @@ GitOps repository for homelab infrastructure. Manages **Kubernetes** (via Flux +
 │  Kubernetes      │  Docker              │  Proxmox                       │
 │  (Flux + ArgoCD) │  (Komodo GitOps)     │  (Ansible)                     │
 │                  │                      │                                │
-│  3-node cluster  │  6 Docker hosts      │  R720XD standalone node        │
+│  3-node cluster  │  7 Docker hosts      │  R720XD standalone node        │
 │  Infrastructure: │  komodo, nvr, kasm,  │  ZFS storage (pool0, ssdpool0) │
-│   MetalLB,       │  omni, server04,     │  SeaweedFS VM (S3/WebDAV)      │
-│   Ingress,       │  seaweedfs           │  NFS exports, Sanoid snapshots │
-│   Cert-Manager,  │  13 stacks           │  Alloy + smartctl monitoring   │
+│   MetalLB,       │  omni, server04,     │  NFS exports, Sanoid snapshots │
+│   Ingress,       │  storage,            │  Alloy + smartctl monitoring   │
+│   Cert-Manager,  │  racknerd-aegis      │                                │
 │   Rook-Ceph      │                      │                                │
 ├──────────────────┴──────────────────────┴────────────────────────────────┤
 │  Shared: SOPS + age encryption, *.sharmamohit.com domain,               │
@@ -124,7 +124,7 @@ Manages Docker containers across 7 hosts via [Komodo](https://komo.do) Resource 
 | **kasm** | Remote Desktop | KASM Workspaces, Newt, Alloy |
 | **omni** | K8s Management | Siderolabs Omni, Alloy |
 | **server04** | App Server + Build | Traefik, Vaultwarden, Alloy |
-| **seaweedfs** | Object Storage | SeaweedFS (5 containers), Alloy |
+| **storage** | Object Store + Backups | Garage (S3), garage-snapshotter, backup-verifier |
 | **racknerd-aegis** | VPS Gateway | Pangolin + Gerbil, public Traefik + CrowdSec, LLDAP + PocketID, Periphery (Komodo-managed), Alloy |
 
 ### How It Works
@@ -146,7 +146,7 @@ Manages Proxmox VE node configuration via Ansible. See [proxmox/README.md](proxm
 | **IP** | 192.168.11.15 |
 | **Hardware** | Dell R720XD, 256GB RAM, 14 drives |
 | **ZFS Pools** | pool0 (21.8T raidz1), ssdpool0 (7.27T raidz1) — both encrypted (aes-256-gcm) |
-| **VMs** | SeaweedFS (S3 object storage, 4 buckets) |
+| **VMs** | none — the SeaweedFS VM is gone with this node |
 | **Services** | NFS export (/mnt/pool0/nvr for Frigate), Sanoid snapshots, Alloy, smartctl-exporter |
 
 ```bash

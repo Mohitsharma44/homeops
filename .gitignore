@@ -47,3 +47,11 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# Local agent/tooling caches — never commit these.
+# .fastembed_cache holds ~146 MB of ONNX model blobs and appears in three
+# places (repo root, docker/, kubernetes/) depending on where a tool was run.
+# A plain `git add -A` picks all of it up.
+.fastembed_cache/
+**/.fastembed_cache/
+.bg-shell/

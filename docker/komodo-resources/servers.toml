@@ -47,14 +47,6 @@ region = "HomeLab"
 enabled = true
 
 [[server]]
-name = "seaweedfs"
-description = "SeaweedFS distributed storage"
-tags = ["bare-metal", "storage"]
-[server.config]
-region = "HomeLab"
-enabled = true
-
-[[server]]
 name = "racknerd-aegis"
 description = "RackNerd VPS — Pangolin gateway, CrowdSec, identity providers"
 tags = ["vps", "gateway"]

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Full metrics/logs/traces observability stack deployed in the `monitoring` namespace via ArgoCD, with long-term storage on a SeaweedFS S3 VM hosted on the `r720xd` Proxmox node.
+Full metrics/logs/traces observability stack deployed in the `monitoring` namespace via ArgoCD, with long-term storage on the Garage object store running on the storage host.
 
 ## Components
 
@@ -20,7 +20,7 @@ Three data pipelines — **metrics**, **logs**, and **traces** — all converge 
 
 ### Metrics Pipeline
 
-Prometheus scrapes `/metrics` endpoints from pods, node-exporters, and kube-state-metrics every 30s. It stores 3 days of raw data on a local NVMe PVC. The Thanos Sidecar watches Prometheus's TSDB and uploads completed 2-hour blocks to SeaweedFS S3.
+Prometheus scrapes `/metrics` endpoints from pods, node-exporters, and kube-state-metrics every 30s. It stores 3 days of raw data on a local NVMe PVC. The Thanos Sidecar watches Prometheus's TSDB and uploads completed 2-hour blocks to the object store.
 
 For queries, Thanos Query federates two sources: the Sidecar (recent data) and the Store Gateway (old data from S3), deduplicating overlapping blocks and presenting a single Prometheus-compatible API. The Compactor runs in the background downsampling old data (5-minute resolution for 30 days, 1-hour resolution for 180 days) to keep long-range queries fast.
 
@@ -30,7 +30,7 @@ Pods/Exporters
   ▼
 Prometheus (3d on NVMe)
   │
-  ├─ Thanos Sidecar ──uploads──→ SeaweedFS S3 (thanos-metrics)
+  ├─ Thanos Sidecar ──uploads──→ object store (thanos-metrics)
   │                                  │
   │                     ┌────────────┼───────────┐
   │                     ▼            ▼           │
@@ -50,7 +50,7 @@ Prometheus (3d on NVMe)
 
 Alloy runs as a DaemonSet on every node. It discovers pods via the Kubernetes API, reads their stdout/stderr logs, enriches them with labels (namespace, pod, container, node, app), and pushes to Loki with `tenant_id = "homelab"`.
 
-Loki runs in SingleBinary mode — one pod handling ingestion, storage, and queries. It writes a local WAL to NVMe, then flushes chunks to SeaweedFS S3. Retention is 30 days.
+Loki runs in SingleBinary mode — one pod handling ingestion, storage, and queries. It writes a local WAL to NVMe, then flushes chunks to the object store. Retention is 30 days.
 
 ```
 Pods (stdout/stderr)
@@ -63,7 +63,7 @@ Alloy DaemonSet (every node)
 Loki SingleBinary (WAL on NVMe)
   │  flushes chunks
   ▼
-SeaweedFS S3 (loki-chunks)
+object store (loki-chunks)
   ▲
   │  LogQL queries
 Grafana
@@ -73,7 +73,7 @@ Grafana
 
 Traces are opt-in. Applications instrumented with OpenTelemetry send OTLP data to Alloy, which forwards it to Tempo. Alloy listens on `:4317` (gRPC) and `:4318` (HTTP) for any app that emits traces.
 
-Tempo stores trace data in a local WAL, then flushes to SeaweedFS S3. Retention is 7 days.
+Tempo stores trace data in a local WAL, then flushes to the object store. Retention is 7 days.
 
 ```
 Apps (OpenTelemetry instrumented)
@@ -85,7 +85,7 @@ Alloy DaemonSet
 Tempo Monolithic (WAL on NVMe)
   │  flushes traces
   ▼
-SeaweedFS S3 (tempo-traces)
+object store (tempo-traces)
   ▲
   │  TraceQL queries
 Grafana
@@ -133,7 +133,8 @@ Grafana
 ─ ─ ─│─ ─ ─ ─ ─ ─ ─ ─│─ ─ ─ ─ ─│─ ─ ─  LAN (192.168.11.0/24) ─ ─ ─ ─ ─ ─ ─
      │                │         │
 ┌────▼────────────────▼─────────▼─────────────────────────────────────────────┐
-│  r720xd (Proxmox) ── SeaweedFS VM ── S3 :8333 ── seaweedfs.sharmamohit.com │
+│  storage host (UGREEN DXP6800 Pro) ── Garage ── S3 :3900                    │
+│                                    objects.sharmamohit.com:3900             │
 │                                                                             │
 │  ┌──────────────┐  ┌──────────┐  ┌───────────┐  ┌───────────────┐          │
 │  │thanos-metrics│  │loki-chunks│  │loki-ruler │  │ tempo-traces  │          │
@@ -235,15 +236,30 @@ curl -u alloy:<password> -H "X-Scope-OrgID: homelab" -X POST https://loki.sharma
 curl -X POST https://prometheus.sharmamohit.com/api/v1/write
 ```
 
-## S3 Backend (SeaweedFS VM on r720xd)
+## Object Store (Garage on the storage host)
 
-SeaweedFS runs inside a Proxmox VM on the `r720xd` node (192.168.11.15), providing S3-compatible object storage over the LAN for long-term observability data. (Originally a TrueNAS VM; migrated to Proxmox on 2026-03-14, see `docs/truenas-to-proxmox-migration-log.md`.)
+Garage runs as a Komodo-managed Docker stack on the storage host (UGREEN DXP6800 Pro),
+providing S3-compatible object storage over the LAN for long-term observability data.
+It replaced a SeaweedFS VM that died with the retired `r720xd` node in June 2026, taking
+Loki, Tempo and the Thanos storegateway down with it for 53 days.
 
-- **Hypervisor**: r720xd (Proxmox VE)
-- **Guest**: seaweedfs (Ubuntu 25.10, 192.168.11.133)
-- **Endpoint**: http://seaweedfs.sharmamohit.com:8333
-- **IAM Identity**: observability (Read/Write/List)
+- **Host**: storage, 192.168.11.244
+- **Endpoint**: `http://objects.sharmamohit.com:3900` — by DNS name, never IP. Resolution
+  is a UniFi local A record; there is deliberately **no public record**.
+- **Region**: `garage`. Garage validates the SigV4 region, so a consumer sending
+  `us-east-1` fails authentication and it looks like a credentials problem.
 - **Buckets**: thanos-metrics, loki-chunks, loki-ruler, tempo-traces
+- **Identities**: one scoped key per consumer — `loki` (chunks + ruler), `tempo`
+  (traces), `thanos` (metrics). None holds `owner`, and each is denied on buckets it
+  does not own.
+- **Metadata protection**: `replication_factor` is 1, so the LMDB index has no replica.
+  The `garage-snapshotter` stack triggers metadata snapshots on wall clock and exports
+  their freshness, because Garage's own snapshot timer resets on every restart and it
+  publishes no snapshot metric. Garage keeps only the two most recent snapshots.
+- **Alerting**: the `Infra Object Store` Grafana folder, 10 rules. Two of them watch the
+  store's *contents* (`table_size` for `bucket_v2` and `key`) rather than its liveness,
+  because a restore accident once produced a store that was reachable, logged no errors,
+  and had lost every bucket and key.
 
 ## Secrets
 
@@ -251,13 +267,13 @@ SOPS-encrypted secrets in `kubernetes/infrastructure/configs/`:
 
 | Secret | Namespace | Keys | Used By |
 |--------|-----------|------|---------|
-| `seaweedfs-s3-secret` | monitoring | `aws-access-key-id`, `aws-secret-access-key` | Loki, Tempo (via env vars) |
+| `object-store-credentials` | monitoring | `loki-*`, `tempo-*`, `thanos-*` access key id + secret | Loki, Tempo (via env vars) |
 | `thanos-objstore-secret` | monitoring | `objstore.yml` | Prometheus Thanos sidecar, Thanos components |
 | `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | Ingress basic auth for external write endpoints |
 | `grafana-admin` | monitoring | `admin-user`, `admin-password` | Grafana local admin (break-glass login at `/login`) |
 | `grafana-oidc` | monitoring | `oauth-client-id`, `oauth-client-secret` | Grafana PocketID SSO (env vars in pod) |
 
-**Credential rotation note**: The `seaweedfs-s3-secret` and `thanos-objstore-secret` both contain the same SeaweedFS observability IAM credentials. When rotating credentials, update **both** secrets, then re-encrypt with SOPS.
+**Credential rotation note**: `object-store-credentials` and `thanos-objstore-secret` hold **different** keys now — one scoped key per consumer, not a single shared identity. Rotating one consumer's key does not touch the others. Garage reveals a secret key exactly once, at creation, so mint replacements with `.scratch/object-store-rehome/09-tooling/provision_consumers.py`, re-encrypt with SOPS, and restart the affected consumer. Note that `thanos-objstore-secret` is also read by the Prometheus Thanos sidecar, so changing it restarts the Prometheus pod.
 
 ## Grafana SSO (PocketID OIDC)
 
@@ -301,7 +317,7 @@ Grafana is wired to PocketID via the generic OAuth provider (config in `kubernet
 
 ## Retention Policy
 
-| Data Type | Hot (NVMe) | Cold (SeaweedFS/HDD) |
+| Data Type | Hot (NVMe) | Cold (object store / HDD) |
 |-----------|-----------|---------------------|
 | Metrics (raw) | 3 days | 7 days |
 | Metrics (5m downsample) | — | 30 days |
@@ -408,7 +424,7 @@ See `CLAUDE.md` Gotcha #8 for the short version.
 
 - **Pod Security Standards**: `monitoring` namespace enforces `privileged` PSS (required by node-exporter: hostNetwork, hostPID, hostPath) with `baseline` warnings
 - **Loki multi-tenancy**: `auth_enabled: true` with tenant ID `homelab` — all clients must send `X-Scope-OrgID: homelab` header
-- **S3 transport**: Currently HTTP (`insecure: true`) over LAN. **TODO**: Enable TLS on SeaweedFS and update all S3 endpoint configs to remove `insecure: true`
+- **S3 transport**: HTTP (`insecure: true`) over LAN. This is a deliberate decision, not an oversight — plaintext internally, with no public DNS record for `objects.`. The external shape is reserved as `objects.proxy.sharmamohit.com` but not built.
 
 ## ServiceMonitors Enabled
 
@@ -426,7 +442,7 @@ The following infrastructure components have ServiceMonitors enabled:
 
 ```bash
 cd kubernetes/infrastructure/configs/
-sops -e -i seaweedfs-s3-secret.yaml
+sops -e -i object-store-credentials.yaml
 sops -e -i thanos-objstore-secret.yaml
 ```
 

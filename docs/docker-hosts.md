@@ -13,7 +13,7 @@ All Peripheries run v2.1.2 in **outbound mode** (Periphery dials Core, PKI keypa
 | **kasm** | 192.168.11.34 | Ubuntu 24.04 LTS | `root@kasm` | `/root/komodo-periphery/compose.yaml` | KASM Workspaces + Newt |
 | **omni** | 192.168.11.30 | Ubuntu 22.04 LTS | `root@omni` | `/root/komodo-periphery/compose.yaml` | Siderolabs Omni |
 | **server04** | 192.168.11.17 | Ubuntu 22.04 LTS | `mohitsharma44@server04` | `/home/mohitsharma44/komodo-periphery/compose.yaml` | App server + build server |
-| **seaweedfs** | 192.168.11.133 | Ubuntu 25.10 | `mohitsharma44@seaweedfs` | `/home/mohitsharma44/komodo-periphery/compose.yaml` | SeaweedFS object storage |
+| **storage** | 192.168.11.244 | UGOS (vendor OS, squashfs + overlay) | `mohitsharma44@192.168.11.244` | `/volume2/komodo/periphery/compose.yaml` | Object store + backup verification |
 | **racknerd-aegis** | <VPS_PUBLIC_IP> | Ubuntu 22.04 LTS | `<vps-user>@hs` | Komodo-managed stack `aegis-periphery` | VPS gateway (Pangolin/Traefik/identity) |
 
 ## Network Topology
@@ -37,11 +37,11 @@ All Peripheries run v2.1.2 in **outbound mode** (Periphery dials Core, PKI keypa
    └─────────┘  └─────────┘  │  └──────────┘  └──────────────────┘│
         │                     │                                     │
    ┌────┴────┐  ┌──────────┐ │  ┌────────────┐                    │
-   │  omni   │  │server04  │ │  │ seaweedfs  │                    │
-   │  .30    │  │  .17     │ │  │  .133      │                    │
-   │ Talos   │  │ Traefik  │ │  │ S3 object  │                    │
-   │ Mgmt    │  │ Vault-   │ │  │ storage    │                    │
-   │ Alloy   │  │ warden   │ │  │ Alloy      │                    │
+   │  omni   │  │server04  │ │  │  storage   │                    │
+   │  .30    │  │  .17     │ │  │  .244      │                    │
+   │ Talos   │  │ Traefik  │ │  │ Garage S3  │                    │
+   │ Mgmt    │  │ Vault-   │ │  │ backup-    │                    │
+   │ Alloy   │  │ warden   │ │  │ verifier   │                    │
    └─────────┘  │ Alloy    │ │  └────────────┘                    │
                 └──────────┘ │                                     │
                              └─────────────────────────────────────┘
@@ -145,32 +145,47 @@ Primary application server and Docker build server for custom images.
 
 **Traefik network**: Services that need reverse proxying must join the `traefik_proxy` external Docker network and use Traefik labels for routing.
 
-**Vaultwarden backups**: An Alpine sidecar runs `sqlite3 .backup` daily at 02:00 UTC, storing copies locally at `/opt/backups/vaultwarden/` and uploading to SeaweedFS via WebDAV. Backups older than 180 days are pruned from both locations. See `docker/stacks/server04/vaultwarden/backup.sh` for the script.
+**Vaultwarden backups**: An Alpine sidecar runs `sqlite3 .backup` daily at 02:00 UTC, storing copies locally at `/opt/backups/vaultwarden/` (pruned at 180 days) and pushing them off-host over SFTP to the storage host's `backup-landing` share. The `backup-verifier` stack there integrity-checks each file and promotes it into `backup-archive`, which no sender identity can reach. See `docker/stacks/server04/vaultwarden/backup.sh` and `docker/stacks/storage/backup-verifier/`.
 
 **Periphery quirk**: Requires explicit `dns: ["192.168.11.1"]` in the periphery compose — Docker's embedded DNS doesn't forward correctly on this host.
 
 ---
 
-### seaweedfs (192.168.11.133)
+### storage (192.168.11.244)
 
-**Platform**: Proxmox VM (KVM) on the R720XD node (`r720xd`, 192.168.11.15) — Ubuntu 25.10
-**SSH user**: `mohitsharma44` (sudo available)
+**Platform**: UGREEN DXP6800 Pro running UGOS — a vendor OS on squashfs + overlay
+**SSH user**: `mohitsharma44` (passwordless sudo)
 
-Distributed object storage providing S3-compatible API for the observability stack (Thanos, Loki, Tempo) and general-purpose storage.
+The storage host. It runs storage *providers* only; storage consumers live elsewhere and
+reach it over the network. Everything lives on `/volume2`, never `/etc`, because `/` is a
+firmware-replaceable overlay.
+
+**Never install system packages or hand-patch UGOS**, and **never drive `mdadm` directly**
+— `storage_serv` keeps its own pool state. Shares are created and deleted in the UGOS UI
+only; a shell `rm` desyncs UGOS's own share records.
 
 | Service | Container | Notes |
 |---------|-----------|-------|
-| SeaweedFS Master | `seaweedfs-master-1` | Port 9333 |
-| SeaweedFS Volume | `seaweedfs-volume-1` | Port 8080 |
-| SeaweedFS Filer | `seaweedfs-filer-1` | Port 8888 |
-| SeaweedFS S3 | `seaweedfs-s3-1` | Port 8333 (`seaweedfs.sharmamohit.com:8333`) |
-| SeaweedFS WebDAV | `seaweedfs-webdav-1` | Port 7333 |
-| Periphery | `komodo-periphery-periphery-1` | Standard periphery |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Garage | `garage` | S3 on 3900, admin on 3903, RPC on 3901 (`objects.sharmamohit.com:3900`) |
+| Snapshotter | `garage-snapshotter` | Triggers metadata snapshots on wall clock, exports freshness on 9102 |
+| Backup verifier | `backup-verifier` | Integrity-checks landed backups, promotes them, exports metrics on 9101 |
+| Periphery | `periphery-periphery-1` | `PERIPHERY_ROOT_DIRECTORY=/volume2/komodo/etc-komodo` |
 
-**Data**: `/mnt/seaweedfs/` (master, volume, filer data)
-**S3 credentials**: Stored in `s3.sops.json` (SOPS-encrypted)
-**S3 buckets**: `thanos-metrics`, `loki-chunks`, `loki-ruler`, `tempo-traces`
+**Storage**: `/volume1` = md1, RAID6, 4x 6TB IronWolf. `/volume2` = md2, RAID1 SSD.
+The boot device (`nvme0n1`) is in no array.
+
+**Object store data**: `/volume1/object-store/{meta,data}`; snapshots on the *other*
+array at `/volume2/object-store-snapshots`, so a metadata copy does not share a failure
+domain with the metadata it protects.
+
+**Config**: `docker/stacks/storage/garage/garage.toml` holds no secrets — Garage reads
+`GARAGE_RPC_SECRET`, `GARAGE_ADMIN_TOKEN` and `GARAGE_METRICS_TOKEN` from the environment.
+
+**S3 buckets**: `thanos-metrics`, `loki-chunks`, `loki-ruler`, `tempo-traces`, with one
+scoped key per consumer (`loki`, `tempo`, `thanos`), none holding `owner`.
+
+**Region gotcha**: Garage validates the SigV4 region. Consumers must send `region: garage`;
+`us-east-1` fails authentication and looks like a credentials problem.
 
 ---
 
@@ -212,9 +227,9 @@ ssh root@nvr  "cd /root/komodo-periphery && docker compose up -d --force-recreat
 ssh root@kasm "cd /root/komodo-periphery && docker compose up -d --force-recreate"
 ssh root@omni "cd /root/komodo-periphery && docker compose up -d --force-recreate"
 
-# server04, seaweedfs (non-root users)
-ssh mohitsharma44@server04   "cd ~/komodo-periphery && docker compose up -d --force-recreate"
-ssh mohitsharma44@seaweedfs  "cd ~/komodo-periphery && docker compose up -d --force-recreate"
+# server04, storage (non-root users)
+ssh mohitsharma44@server04       "cd ~/komodo-periphery && docker compose up -d --force-recreate"
+ssh mohitsharma44@192.168.11.244 "cd /volume2/komodo/periphery && sudo docker compose up -d --force-recreate"
 ```
 
 ## Maintenance
@@ -226,7 +241,7 @@ ssh mohitsharma44@seaweedfs  "cd ~/komodo-periphery && docker compose up -d --fo
 for host in root@nvr root@kasm root@omni; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest" &
 done
-for host in mohitsharma44@seaweedfs mohitsharma44@server04; do
+for host in mohitsharma44@server04 mohitsharma44@192.168.11.244; do
   ssh $host "docker pull mohitsharma44/komodo-periphery-sops:latest" &
 done
 wait
@@ -246,7 +261,7 @@ km list servers -a
 
 Or directly via each host's health endpoint:
 ```bash
-for host in komodo nvr kasm omni server04 seaweedfs; do
+for host in komodo nvr kasm omni server04 storage; do
   echo -n "$host: "
   curl -sk https://$host.sharmamohit.com:8120/health 2>/dev/null || echo "unreachable"
 done

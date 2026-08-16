@@ -65,8 +65,8 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 │  │ traefik      │  │ vaultwarden  │  │ Alloy (systemd)│                      │
 │  │ LAN reverse  │  │ Bitwarden    │  │ host metrics + │                      │
 │  │ proxy :80/443│  │ + backup     │  │ SMART + Docker │                      │
-│  │              │  │ sidecar→     │  │ + journal→K8s  │                      │
-│  │              │  │ SeaweedFS    │  │                │                      │
+│  │              │  │ sidecar→SFTP │  │ + journal→K8s  │                      │
+│  │              │  │ →storage host│  │                │                      │
 │  └──────────────┘  └──────────────┘  └────────────────┘                      │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
@@ -95,12 +95,17 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 │  └──────────────┘  └──────────────┘                                           │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ seaweedfs (192.168.11.133) ─ Proxmox VM on r720xd ──────────────────────────┐
-│  Periphery: Docker (periphery-sops)                                           │
-│  ┌──────────────┐  ┌──────────────────┐                                       │
-│  │ seaweedfs    │  │ seaweedfs-alloy  │  S3 backend for Loki, Tempo, Thanos  │
-│  │ Object store │  │ Alloy→K8s        │  at seaweedfs.sharmamohit.com:8333   │
-│  └──────────────┘  └──────────────────┘                                       │
+┌─ storage (192.168.11.244) ─ UGREEN DXP6800 Pro ─ UGOS ───────────────────────┐
+│  Periphery: Docker (periphery-sops), root dir on /volume2                     │
+│  ┌──────────────┐  ┌──────────────────┐  ┌──────────────────┐                 │
+│  │ garage       │  │ garage-          │  │ backup-verifier  │                 │
+│  │ Object store │  │ snapshotter      │  │ verifies+promotes│                 │
+│  │ S3 backend   │  │ metadata snaps   │  │ off-host backups │                 │
+│  │ for Loki,    │  │ + freshness :9102│  │ + metrics :9101  │                 │
+│  │ Tempo, Thanos│  └──────────────────┘  └──────────────────┘                 │
+│  │ objects.sharmamohit.com:3900                                               │
+│  └──────────────┘                                                             │
+│  /volume1 = md1 RAID6 (data+meta)   /volume2 = md2 RAID1 SSD (snapshots)      │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
 ┌─ racknerd-aegis (<VPS_PUBLIC_IP>) ─ VPS ─────────────────────────── 7 stacks ────┐
@@ -123,11 +128,11 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 | Host | Stacks | Notes |
 |------|--------|-------|
 | komodo | komodo-core, komodo-alloy | + Machine Client for VPS mgmt |
-| server04 | traefik, vaultwarden | LAN reverse proxy, vaultwarden backup sidecar→SeaweedFS. Alloy runs as systemd service (not Komodo) |
+| server04 | traefik, vaultwarden | LAN reverse proxy, vaultwarden backup sidecar→SFTP to the storage host. Alloy runs as systemd service (not Komodo) and also scrapes the storage host |
 | nvr | frigate, nvr-alloy | Coral TPU for object detection |
 | kasm | newt, kasm-alloy | KASM installer-managed separately |
 | omni | omni, omni-alloy | Talos Linux management |
-| seaweedfs | seaweedfs, seaweedfs-alloy | S3 for Loki/Tempo/Thanos |
+| storage | garage, garage-snapshotter, backup-verifier | S3 for Loki/Tempo/Thanos, plus off-host backup verification |
 | racknerd-aegis | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy | VPS — 7 stacks |
 
 Most hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`) via Komodo.
@@ -165,9 +170,9 @@ Exceptions: server04, r720xd, and pve03 run systemd Alloy with extended configs 
 │  │    Grafana (grafana.sharmamohit.com, Thanos+Loki+Tempo datasources)     │  │
 │  │    AlertManager (1Gi, 120h)                                              │  │
 │  │                                                                          │  │
-│  │  wave 2: loki (SingleBinary, S3→seaweedfs, 720h, auth=true)             │  │
-│  │  wave 2: thanos (Query, StoreGateway, Compactor, S3→seaweedfs)          │  │
-│  │  wave 2: tempo (S3→seaweedfs, OTLP gRPC:4317 + HTTP:4318, 168h)        │  │
+│  │  wave 2: loki (SingleBinary, S3→objects:3900, 720h, auth=true)          │  │
+│  │  wave 2: thanos (Query, StoreGateway, Compactor, S3→objects:3900)       │  │
+│  │  wave 2: tempo (S3→objects:3900, OTLP gRPC:4317 + HTTP:4318, 168h)      │  │
 │  │                                                                          │  │
 │  │  wave 3: alloy (DaemonSet, pod logs→Loki, OTLP traces→Tempo)           │  │
 │  │                                                                          │  │
@@ -409,7 +414,7 @@ Emergency backdoor: SSH
 │                                 ▼                                      │   │
 │                     ┌─────────────────────────────────────┐            │   │
 │                     │ Thanos (Query + StoreGateway +       │            │   │
-│                     │ Compactor) → S3 at seaweedfs:8333    │            │   │
+│                     │ Compactor) → S3 at objects:3900      │            │   │
 │                     │ Retention: raw=7d, 5m=30d, 1h=180d  │            │   │
 │                     └─────────────────────────────────────┘            │   │
 │                                                                        │   │
@@ -440,7 +445,7 @@ Emergency backdoor: SSH
 │                     │ K8s Loki (monitoring ns)             │            │   │
 │                     │ SingleBinary mode, auth_enabled=true │            │   │
 │                     │ 10Gi ceph-block, 720h retention      │            │   │
-│                     │ S3 backend → seaweedfs:8333          │            │   │
+│                     │ S3 backend → objects:3900            │            │   │
 │                     └─────────────────────────────────────┘            │   │
 │                                                                        │   │
 │  K8s pod logs collected separately by K8s Alloy DaemonSet              │   │
@@ -451,7 +456,7 @@ Emergency backdoor: SSH
 │                                                                            │
 │  K8s Alloy DaemonSet (monitoring ns)                                      │
 │  OTLP receiver gRPC:4317 + HTTP:4318 → Tempo                             │
-│  Tempo: S3→seaweedfs:8333, 168h retention, 10Gi ceph-block               │
+│  Tempo: S3→objects:3900, 168h retention, 10Gi ceph-block                 │
 │                                                                            │
 │  Docker hosts do NOT emit traces (no OTLP instrumentation).               │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -618,7 +623,8 @@ Emergency backdoor: SSH
 | 9120 | TCP/HTTP + websocket | Komodo Core API + Periphery outbound channel (PKI keypair auth) |
 | 51820 | UDP | Gerbil WireGuard (primary) |
 | 21820 | UDP | Gerbil WireGuard (relay) |
-| 8333 | TCP | SeaweedFS S3 API |
+| 3900 | TCP | Garage S3 API (object store) |
+| 3903 | TCP | Garage admin API + metrics |
 
 ### Emergency procedures
 

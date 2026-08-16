@@ -15,7 +15,7 @@ services:
       # bind-mounted runtime files (e.g., crowdsec scripts, traefik dynamic
       # configs) drift away from git on the host filesystem. Matches the
       # mount pattern used on all other periphery hosts (server04, nvr,
-      # kasm, omni, seaweedfs).
+      # kasm, omni, storage).
       - /etc/komodo:/etc/komodo
       - keys:/config/keys
     env_file: .env
