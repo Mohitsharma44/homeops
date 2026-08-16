@@ -7,10 +7,9 @@ resources:
   - ceph-cluster.yaml
   - ceph/
   - monitoring-ns.yaml
-  - seaweedfs-s3-secret.yaml
   - thanos-objstore-secret.yaml
-  # Replaces seaweedfs-s3-secret once the consumers are cut over (ticket 06).
-  # Nothing references it yet, so applying it is inert.
+  # Loki and Tempo credentials. One scoped key per consumer; replaced
+  # seaweedfs-s3-secret, which is gone along with the host it named.
   - object-store-credentials.yaml
   - monitoring-basic-auth-secret.yaml
   - alertmanager-slack-secret.yaml
