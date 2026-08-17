@@ -147,6 +147,65 @@ configs:
         }
 
         // ============================================================
+        // Backup verifier (:9101)
+        //
+        // Migrated here from server04's Alloy on 2026-08-17. It was scraped
+        // across the LAN from server04 only because this host ran no Alloy of
+        // its own; now that it does, the scrape is local and the config is in
+        // git.
+        // ============================================================
+
+        prometheus.scrape "backup_verifier" {
+          targets         = [{"__address__" = "127.0.0.1:9101"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "backup-verifier"
+        }
+
+        // ============================================================
+        // The object store (Garage) admin API
+        //
+        // Addressed on loopback rather than by name. Ticket 04 settled that
+        // the object store is reached BY NAME (objects.sharmamohit.com) --
+        // that rule is about consumers reaching the store across the network.
+        // This is the store's own host scraping itself, so loopback is both
+        // correct and immune to the gateway's DNS interception.
+        //
+        // The bearer token is required: garage.toml sets
+        // metrics_require_token = true.
+        //
+        // scrape_timeout is raised far above the 10s default ON PURPOSE.
+        // Ticket 09 measured the admin API stalling ~20s (once over 60s) under
+        // write load, so a default-timeout scrape returns nothing exactly when
+        // the store is stressed and the metrics matter most. The alerts use
+        // `for: 15m`, so a rare overrun fires nothing.
+        // ============================================================
+
+        prometheus.scrape "garage" {
+          targets         = [{"__address__" = "127.0.0.1:3903"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          job_name        = "garage"
+          scrape_interval = "60s"
+          scrape_timeout  = "50s"
+          bearer_token    = sys.env("GARAGE_METRICS_TOKEN")
+        }
+
+        // ============================================================
+        // Garage metadata snapshot freshness (:9102)
+        //
+        // Separate from Garage itself because Garage publishes NO snapshot
+        // metric in any of its 44 metric families, so snapshot age can only be
+        // measured on the filesystem.
+        // ============================================================
+
+        prometheus.scrape "garage_snapshotter" {
+          targets         = [{"__address__" = "127.0.0.1:9102"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          job_name        = "garage-snapshotter"
+          scrape_interval = "60s"
+        }
+
+        // ============================================================
         // Container metrics (cAdvisor)
         // ============================================================
 
