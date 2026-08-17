@@ -1,0 +1,258 @@
+// ============================================================
+// Host metrics (node_exporter, built in to Alloy)
+//
+// No separate node-exporter container is needed -- Alloy's unix
+// exporter IS node_exporter. Its mdadm collector supplies
+// node_md_disks / node_md_state, which is how array degradation is
+// detected; md-exporter below covers only what this cannot.
+// ============================================================
+
+prometheus.exporter.unix "host" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/rootfs"
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "60s"
+  job_name        = "node"
+}
+
+// ============================================================
+// SMART attributes (smartctl-exporter stack, :9633)
+//
+// 120s to match the exporter's own --smartctl.interval. Scraping
+// faster than the exporter polls just re-serves a cached reading.
+// ============================================================
+
+prometheus.scrape "smartctl" {
+  targets         = [{"__address__" = "127.0.0.1:9633"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "120s"
+  job_name        = "smartctl"
+}
+
+// ============================================================
+// md array scrub state (md-exporter stack, :9104)
+// ============================================================
+
+prometheus.scrape "md_exporter" {
+  targets         = [{"__address__" = "127.0.0.1:9104"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "60s"
+  job_name        = "md-exporter"
+}
+
+// ============================================================
+// Backup verifier (:9101)
+//
+// Migrated here from server04's Alloy on 2026-08-17. It was scraped
+// across the LAN from server04 only because this host ran no Alloy of
+// its own; now that it does, the scrape is local and the config is in
+// git.
+// ============================================================
+
+prometheus.scrape "backup_verifier" {
+  targets         = [{"__address__" = "127.0.0.1:9101"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "60s"
+  job_name        = "backup-verifier"
+}
+
+// ============================================================
+// The object store (Garage) admin API
+//
+// Addressed on loopback rather than by name. Ticket 04 settled that
+// the object store is reached BY NAME (objects.sharmamohit.com) --
+// that rule is about consumers reaching the store across the network.
+// This is the store's own host scraping itself, so loopback is both
+// correct and immune to the gateway's DNS interception.
+//
+// The bearer token is required: garage.toml sets
+// metrics_require_token = true.
+//
+// scrape_timeout is raised far above the 10s default ON PURPOSE.
+// Ticket 09 measured the admin API stalling ~20s (once over 60s) under
+// write load, so a default-timeout scrape returns nothing exactly when
+// the store is stressed and the metrics matter most. The alerts use
+// `for: 15m`, so a rare overrun fires nothing.
+// ============================================================
+
+prometheus.scrape "garage" {
+  targets         = [{"__address__" = "127.0.0.1:3903"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  job_name        = "garage"
+  scrape_interval = "60s"
+  scrape_timeout  = "50s"
+  bearer_token    = sys.env("GARAGE_METRICS_TOKEN")
+}
+
+// ============================================================
+// Garage metadata snapshot freshness (:9102)
+//
+// Separate from Garage itself because Garage publishes NO snapshot
+// metric in any of its 44 metric families, so snapshot age can only be
+// measured on the filesystem.
+// ============================================================
+
+prometheus.scrape "garage_snapshotter" {
+  targets         = [{"__address__" = "127.0.0.1:9102"}]
+  forward_to      = [prometheus.relabel.instance.receiver]
+  job_name        = "garage-snapshotter"
+  scrape_interval = "60s"
+}
+
+// ============================================================
+// Container metrics (cAdvisor)
+// ============================================================
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host = "unix:///var/run/docker.sock"
+}
+
+prometheus.scrape "containers" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  forward_to      = [prometheus.relabel.instance.receiver]
+  scrape_interval = "60s"
+  job_name        = "cadvisor"
+}
+
+// ============================================================
+// Relabel: stamp instance=storage on everything scraped here
+// ============================================================
+
+prometheus.relabel "instance" {
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+
+  rule {
+    action       = "replace"
+    target_label = "instance"
+    replacement  = sys.env("INSTANCE_NAME")
+  }
+}
+
+// ============================================================
+// Remote write: push metrics to K8s Prometheus
+// ============================================================
+
+prometheus.remote_write "prometheus" {
+  // "infra" is a historical label meaning "non-K8s infrastructure".
+  external_labels = {
+    source = "infra",
+  }
+
+  endpoint {
+    url = sys.env("PROMETHEUS_URL")
+
+    basic_auth {
+      username = sys.env("BASIC_AUTH_USERNAME")
+      password = sys.env("BASIC_AUTH_PASSWORD")
+    }
+  }
+}
+
+// ============================================================
+// Container logs
+// ============================================================
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_image_name"]
+    target_label  = "image"
+  }
+  rule {
+    action       = "replace"
+    target_label  = "instance"
+    replacement  = sys.env("INSTANCE_NAME")
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.write.loki.receiver]
+}
+
+// ============================================================
+// Host journal logs -- kernel I/O and ATA errors in particular
+// ============================================================
+
+loki.source.journal "host" {
+  forward_to    = [loki.process.journal.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels = {
+    job = "journal",
+  }
+}
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "priority"
+  }
+}
+
+loki.process "journal" {
+  // Drop routine INFO chatter from UGOS's own service daemons.
+  //
+  // Measured 2026-08-17, immediately after this stack first shipped
+  // journal logs: 3,050 lines per 5 minutes, ~880k/day, of which
+  // index_serv (777/5m), entry_serv (461/5m) and search_serv (300/5m)
+  // were the bulk -- all vendor INFO like "queue empty, sleep 3s".
+  //
+  // This is not tidiness. Journal shipping was added here to catch
+  // kernel ATA/UNC errors on a degrading disk, and that signal is
+  // useless buried under a thousand-to-one noise ratio. Every one of
+  // those lines is also a write into Garage, which lives on this same
+  // host and on the same array being watched.
+  //
+  // Scoped narrowly on purpose: only these named vendor units, and
+  // only at info/debug. Anything at notice or above from them still
+  // ships, and every other unit -- the kernel included -- is
+  // untouched.
+  stage.match {
+    selector = "{unit=~\"index_serv.service|entry_serv.service|search_serv.service|syncbackup_serv.service|log_serv.service\", priority=~\"info|debug\"}"
+    action   = "drop"
+  }
+
+  stage.static_labels {
+    values = {
+      instance = "storage",
+    }
+  }
+  forward_to = [loki.write.loki.receiver]
+}
+
+// ============================================================
+// Loki write: push logs to K8s Loki
+// ============================================================
+
+loki.write "loki" {
+  endpoint {
+    url       = sys.env("LOKI_URL")
+    tenant_id = "homelab"
+
+    basic_auth {
+      username = sys.env("BASIC_AUTH_USERNAME")
+      password = sys.env("BASIC_AUTH_PASSWORD")
+    }
+  }
+}
