@@ -312,6 +312,28 @@ configs:
         }
 
         loki.process "journal" {
+          // Drop routine INFO chatter from UGOS's own service daemons.
+          //
+          // Measured 2026-08-17, immediately after this stack first shipped
+          // journal logs: 3,050 lines per 5 minutes, ~880k/day, of which
+          // index_serv (777/5m), entry_serv (461/5m) and search_serv (300/5m)
+          // were the bulk -- all vendor INFO like "queue empty, sleep 3s".
+          //
+          // This is not tidiness. Journal shipping was added here to catch
+          // kernel ATA/UNC errors on a degrading disk, and that signal is
+          // useless buried under a thousand-to-one noise ratio. Every one of
+          // those lines is also a write into Garage, which lives on this same
+          // host and on the same array being watched.
+          //
+          // Scoped narrowly on purpose: only these named vendor units, and
+          // only at info/debug. Anything at notice or above from them still
+          // ships, and every other unit -- the kernel included -- is
+          // untouched.
+          stage.match {
+            selector = "{unit=~\"index_serv.service|entry_serv.service|search_serv.service|syncbackup_serv.service|log_serv.service\", priority=~\"info|debug\"}"
+            action   = "drop"
+          }
+
           stage.static_labels {
             values = {
               instance = "storage",
