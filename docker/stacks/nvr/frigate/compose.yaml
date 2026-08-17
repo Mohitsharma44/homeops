@@ -16,6 +16,17 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ./config:/config
+      # /media/frigate is NOT local disk. It is an NFSv3 mount of the `nvr` share on
+      # the storage host (192.168.11.244:/volume1/nvr), set in the host's /etc/fstab.
+      # It replaced 192.168.11.15:/mnt/pool0/nvr when the r720xd was retired 2026-08-10.
+      #
+      # If the NAS is down, `nofail` lets the VM boot but /media/frigate is then an
+      # EMPTY LOCAL DIRECTORY, and Frigate will happily record into it and fill the
+      # 59 GB root disk in about a week at the measured ~7 GB/day. Check
+      # `mount | grep /media/frigate` before believing a "Frigate is healthy" report.
+      #
+      # The export squashes root to uid 1000 / gid 10 (UGOS "map root to admin"), so
+      # every file is owned mohitsharma44:admin, not root. That is expected.
       - /media/frigate:/media/frigate
       - type: tmpfs
         target: /tmp/cache

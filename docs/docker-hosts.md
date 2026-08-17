@@ -73,21 +73,38 @@ Runs Komodo Core (the control plane) as a self-managed stack, alongside systemd 
 
 ### nvr (192.168.11.89)
 
-**Platform**: Proxmox LXC container — Debian 12
+**Platform**: QEMU VM 101 on `pve` (192.168.11.13) — Debian 12
 
 Dedicated NVR host running Frigate with hardware acceleration.
 
 | Service | Container | Notes |
 |---------|-----------|-------|
-| Frigate | `frigate` | Coral TPU (`/dev/apex_0`), Intel GPU (`/dev/dri/renderD128`), privileged |
+| Frigate | `frigate` | Coral TPU (`/dev/apex_0`), privileged. No Intel GPU — `/dev/dri/renderD128` was dropped 2026-08-13 when this host became a VM |
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
-**Frigate config**: Compose at `/root/frigate/docker-compose.yaml` (now managed via Komodo)
-**Media**: `/media/frigate`
+**Frigate config**: Compose at `/root/frigate/docker-compose.yaml` (now managed via Komodo).
+Frigate's own `config.yaml` lives at `/etc/komodo/stacks/frigate/.../config/` on the host
+and is **not in git**.
+
+**Media**: `/media/frigate` — an **NFSv3 mount** of `192.168.11.244:/volume1/nvr`, the
+`nvr` share on the storage host. Declared in the host's `/etc/fstab` with `nofail`.
+It replaced `192.168.11.15:/mnt/pool0/nvr` when the r720xd was retired 2026-08-10.
+
+> **Check the mount before trusting a healthy Frigate.** `nofail` means the VM boots
+> even when the NAS is unreachable, leaving `/media/frigate` as an empty local
+> directory. Frigate then records to the 59 GB root disk and fills it in about a week
+> at ~7 GB/day — which is exactly what happened between 2026-08-11 and 2026-08-16, and
+> what pushed `pve`'s LVM thin pool toward the `io-error` it hit on 2026-08-13.
+> `mount | grep /media/frigate` is the one-line check.
+
+Retention is 60 days (~420 GB at the measured rate), which is why this cannot live on
+local disk. The export squashes root to uid 1000 / gid 10, so recordings are owned
+`mohitsharma44:admin`.
+
 **Ports**: 8971 (UI), 5000, 8554 (RTSP), 8555 (WebRTC)
 
-**Hardware note**: Frigate is pinned to this host due to Coral TPU and Intel GPU dependencies.
+**Hardware note**: Frigate is pinned to this host by the Coral TPU.
 
 ---
 
