@@ -258,6 +258,31 @@ spec:
                           repeat_interval: 1h
             rules.yaml:
               apiVersion: 1
+              # Grafana's alert-rule file provisioning ADDS and UPDATES only --
+              # it does NOT prune. Deleting a group from `groups` below leaves
+              # the rules orphaned in Grafana's database, still evaluating and
+              # still able to notify, and they cannot be removed through the UI
+              # or API either because they are marked provisioned.
+              #
+              # Verified the hard way on 2026-08-17: the infra-zfs-health group
+              # was removed from this file and Grafana restarted, and all three
+              # ZfsPool* rules were still present and still evaluating
+              # afterwards. `deleteRules` is the only mechanism that removes
+              # them.
+              #
+              # So: when retiring a rule, delete it from `groups` AND list its
+              # uid here. Entries can be pruned from this list once a Grafana
+              # restart has actually processed them, but leaving them is
+              # harmless and idempotent.
+              deleteRules:
+                # Retired with the TrueNAS/r720xd estate -- nothing runs ZFS
+                # any more. `pve` has no zpools and `pve03` is powered off.
+                - orgId: 1
+                  uid: zfs-degraded
+                - orgId: 1
+                  uid: zfs-faulted
+                - orgId: 1
+                  uid: zfs-unavail
               groups:
                 - orgId: 1
                   name: infra-node-health
