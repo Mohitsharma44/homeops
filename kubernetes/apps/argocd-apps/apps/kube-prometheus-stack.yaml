@@ -1041,8 +1041,15 @@ spec:
                             to: 0
                           datasourceUid: thanos
                           model:
-                            # Four buckets are expected: loki-chunks,
-                            # loki-ruler, tempo-traces, thanos-metrics.
+                            # FIVE buckets are expected: loki-chunks,
+                            # loki-ruler, tempo-traces, thanos-metrics and
+                            # drive-files. drive-files was added by ticket 16b
+                            # for the SFTPGo drive; the threshold below moved
+                            # 4 -> 5 with it. A count rule that is never raised
+                            # when a consumer lands under-counts forever and
+                            # SILENTLY -- it would keep passing with the drive's
+                            # bucket destroyed, which is precisely the failure
+                            # it exists to catch.
                             #
                             # This rule exists because of a real failure mode,
                             # not a hypothetical one. Following upstream's
@@ -1068,7 +1075,7 @@ spec:
                             conditions:
                               - evaluator:
                                   type: lt
-                                  params: [4]
+                                  params: [5]
                             refId: C
                       for: 15m
                       noDataState: Alerting
@@ -1077,7 +1084,7 @@ spec:
                         severity: critical
                       annotations:
                         summary: "The object store has lost a bucket"
-                        description: "Fewer than the expected four buckets exist. This is what a silently emptied store looks like -- reachable, no errors, no data. Do NOT restart anything first; read .scratch/object-store-rehome/issues/10-restore-runbook.md, and note that upstream's own restore documentation destroys the store."
+                        description: "Fewer than the expected five buckets exist (loki-chunks, loki-ruler, tempo-traces, thanos-metrics, drive-files). This is what a silently emptied store looks like -- reachable, no errors, no data. Do NOT restart anything first; read .scratch/object-store-rehome/issues/10-restore-runbook.md, and note that upstream's own restore documentation destroys the store."
                     - uid: object-store-keys-missing
                       title: ObjectStoreKeysMissing
                       condition: C
@@ -1088,10 +1095,13 @@ spec:
                             to: 0
                           datasourceUid: thanos
                           model:
-                            # Three scoped keys are expected: loki, tempo,
-                            # thanos. Garage reveals a secret key exactly once,
-                            # at creation, so a lost key means reprovisioning
-                            # and re-encrypting the consumer secrets.
+                            # FOUR scoped keys are expected: loki, tempo,
+                            # thanos and drive. Garage reveals a secret key
+                            # exactly once, at creation, so a lost key means
+                            # reprovisioning and re-encrypting the consumer
+                            # secrets. The `drive` key arrived with ticket 16b
+                            # and the threshold below moved 3 -> 4 with it, for
+                            # the same reason as the bucket count above.
                             expr: 'table_size{table_name="key"}'
                             refId: A
                         - refId: B
@@ -1109,7 +1119,7 @@ spec:
                             conditions:
                               - evaluator:
                                   type: lt
-                                  params: [3]
+                                  params: [4]
                             refId: C
                       for: 15m
                       noDataState: Alerting
@@ -1118,7 +1128,60 @@ spec:
                         severity: critical
                       annotations:
                         summary: "The object store has lost an access key"
-                        description: "Fewer than the expected three scoped keys exist. Consumers will start failing authentication. Rebuild with .scratch/object-store-rehome/09-tooling/provision_consumers.py, then re-encrypt object-store-credentials and thanos-objstore-secret."
+                        description: "Fewer than the expected four scoped keys exist (loki, tempo, thanos, drive). Consumers will start failing authentication. Rebuild with .scratch/object-store-rehome/09-tooling/provision_consumers.py, then re-encrypt object-store-credentials, thanos-objstore-secret and drive-object-store-credentials."
+                    # ----------------------------------------------------
+                    # THE 2 TiB DRIVE QUOTA ALERT IS DELIBERATELY ABSENT.
+                    #
+                    # Ticket 16f asks for "alert at 75% of the 2 T quota" on
+                    # drive-files (maxSize 2199023255552; 75% = 1649267441664).
+                    # It cannot be built from any series that exists today, and
+                    # a rule on an invented metric name is worse than no rule --
+                    # it can never fire, and it reads as coverage.
+                    #
+                    # Checked on 2026-08-17, not assumed:
+                    #   group by (__name__) ({job="garage"})  -> 69 names, NONE
+                    #   per-bucket. Garage v2.3.0 exports no bucket-size,
+                    #   bucket-bytes or bucket-object series at all.
+                    #   api_s3_request_counter carries only `api_endpoint`;
+                    #   there is no `bucket` label anywhere in the export.
+                    #   garage_local_disk_{avail,total} are per-VOLUME and the
+                    #   whole of /volume1 is ~10.9 TB shared with Frigate and
+                    #   the Vaultwarden backups, so it is not a proxy for a
+                    #   2 TiB per-bucket quota.
+                    # Alloy applies no metric-dropping relabel to job="garage"
+                    #   (docker/stacks/storage/alloy/config.alloy), so the
+                    #   scraped set is the raw endpoint, not a filtered view.
+                    # Grafana has exactly three datasources (Loki, Tempo,
+                    #   Thanos), so an alert rule cannot poll the admin API
+                    #   directly either.
+                    #
+                    # The data DOES exist, just not in Prometheus. Garage's
+                    # admin API returns it per bucket:
+                    #   GET /v2/GetBucketInfo?globalAlias=drive-files
+                    #   -> {"objects":0,"bytes":0,
+                    #       "quotas":{"maxSize":2199023255552}}
+                    #
+                    # So the fix is an exporter, not a metric name. The
+                    # precedent is already in this repo and was created for the
+                    # identical reason: garage-snapshotter exists solely because
+                    # "Garage publishes NO snapshot metric in any of its 44
+                    # metric families", and it publishes
+                    # garage_snapshot_newest_timestamp_seconds on :9102 which
+                    # GarageSnapshotStale below consumes. A sibling that polls
+                    # GetBucketInfo and publishes garage_bucket_bytes{bucket=}
+                    # plus garage_bucket_quota_max_size_bytes{bucket=} makes the
+                    # rule a three-line threshold on
+                    #   garage_bucket_bytes{bucket="drive-files"}
+                    #     / garage_bucket_quota_max_size_bytes{bucket="drive-files"}
+                    #     > 0.75
+                    # That exporter is on the storage host, outside this file
+                    # and outside 16f's monitoring scope. Filed, not forgotten.
+                    #
+                    # Until it exists the 2 TiB ceiling is UNMONITORED: Garage
+                    # enforces the quota itself and will start refusing writes,
+                    # but nothing warns on the way up. Uploads are 0 bytes today
+                    # so nothing is at risk yet.
+                    # ----------------------------------------------------
                     - uid: object-store-server-errors
                       title: ObjectStoreServerErrors
                       condition: C
