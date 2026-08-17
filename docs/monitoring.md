@@ -204,7 +204,16 @@ In addition to the K8s Alloy DaemonSet, Grafana Alloy runs on all infrastructure
 Data is pushed to the K8s observability stack via the external write endpoints below. All infrastructure host metrics include `source="infra"` and `instance=<hostname>` labels for filtering in Grafana.
 
 **Komodo-managed Alloy** (5 LAN hosts + VPS): `docker/stacks/shared/alloy/compose.yaml`, credentials in `docker/stacks/shared/alloy/.sops.env`
-**Systemd Alloy** (server04, r720xd, pve03): These hosts run smartctl_exporter + Alloy on the host. server04 is bare metal (Ubuntu 22.04); r720xd and pve03 are Proxmox nodes provisioned by the `proxmox/site.yml` Ansible playbook. All three use `/etc/alloy/config.alloy` with credentials in `/etc/default/alloy-env`. The historical TrueNAS arrangement (persistent ZFS storage at `/mnt/ssdpool1/admin/`, Post Init Script) was retired when the R720XD was migrated to Proxmox on 2026-03-14 — Alloy now lives in standard `/etc/...` locations.
+**Systemd Alloy** (server04, pve03): These hosts run smartctl_exporter + Alloy on the host. server04 is bare metal (Ubuntu 22.04); pve03 is a Proxmox node provisioned by the `proxmox/site.yml` Ansible playbook. Both use `/etc/alloy/config.alloy` with credentials in `/etc/default/alloy-env`. `r720xd` was a third such host until it was retired on 2026-08-10. The historical TrueNAS arrangement (persistent ZFS storage at `/mnt/ssdpool1/admin/`, Post Init Script) had already been retired when that hardware was migrated to Proxmox on 2026-03-14.
+
+**Known blind spots.** Two hosts ship no node metrics at all, so nothing below alerts on them:
+
+| Host | Gap |
+|------|-----|
+| `pve` (192.168.11.13) | The hypervisor running the nvr, kasm, komodo and omni guests. No Alloy, no smartctl-exporter, no Sanoid, and absent from `proxmox/inventory/hosts.yml`. Its LVM thin pool hit `io-error` on 2026-08-13 with no alert. |
+| `storage` (192.168.11.244) | Garage and the snapshotter are scraped, but the UGOS host itself is not. No disk, memory or mdadm metrics. |
+
+Neither is covered by `source="infra"` queries — `node_uname_info{source="infra"}` returns only komodo, nvr, omni, racknerd-aegis and server04.
 
 
 

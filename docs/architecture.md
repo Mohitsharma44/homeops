@@ -49,7 +49,7 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 ## L1 — Docker Hosts & Stacks
 
 ```
-┌─ komodo (192.168.11.200) ─ LXC CT200 ─ Proxmox ──────────────────────────────┐
+┌─ komodo (192.168.11.200) ─ QEMU VM 103 on pve ───────────────────────────────┐
 │  Periphery: systemd (native sops+age)                                         │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────────────────┐  │
 │  │ komodo-core  │  │ komodo-alloy │  │ Machine Client (/opt/pangolin-     │  │
@@ -70,15 +70,15 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 │  └──────────────┘  └──────────────┘  └────────────────┘                      │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ nvr (192.168.11.89) ─ LXC ─ Proxmox ────────────────────────────────────────┐
+┌─ nvr (192.168.11.89) ─ QEMU VM 101 on pve ───────────────────────────────────┐
 │  Periphery: Docker (periphery-sops)                                           │
 │  ┌──────────────┐  ┌──────────────┐                                           │
-│  │ frigate      │  │ nvr-alloy    │                                           │
-│  │ NVR+Coral TPU│  │ Alloy→K8s    │                                           │
-│  └──────────────┘  └──────────────┘                                           │
+│  │ frigate      │  │ nvr-alloy    │  /media/frigate is NFSv3 from the        │
+│  │ NVR+Coral TPU│  │ Alloy→K8s    │  storage host (was the r720xd until      │
+│  └──────────────┘  └──────────────┘  it was retired 2026-08-10)              │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ kasm (192.168.11.34) ─ Bare metal ───────────────────────────────────────────┐
+┌─ kasm (192.168.11.34) ─ QEMU VM 102 on pve ─ STOPPED ────────────────────────┐
 │  Periphery: Docker (periphery-sops)                                           │
 │  ┌──────────────┐  ┌──────────────┐                                           │
 │  │ newt         │  │ kasm-alloy   │  KASM Workspaces managed by installer,   │
@@ -87,7 +87,7 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 │  └──────────────┘  └──────────────┘                                           │
 ├───────────────────────────────────────────────────────────────────────────────┤
 
-┌─ omni (192.168.11.30) ─ LXC ─ Proxmox ───────────────────────────────────────┐
+┌─ omni (192.168.11.30) ─ QEMU VM 130 on pve ──────────────────────────────────┐
 │  Periphery: Docker (periphery-sops)                                           │
 │  ┌──────────────┐  ┌──────────────┐                                           │
 │  │ omni         │  │ omni-alloy   │                                           │
@@ -137,7 +137,7 @@ metrics/logs to K8s through the same Machine Client tunnel. SSH is the emergency
 
 Most hosts run a shared Alloy stack (`docker/stacks/shared/alloy/compose.yaml`) via Komodo.
 Per-host config via Komodo `environment` field → `INSTANCE_NAME`, `PROMETHEUS_URL`, `LOKI_URL`.
-Exceptions: server04, r720xd, and pve03 run systemd Alloy with extended configs (SMART, journal). r720xd + pve03 are provisioned by `proxmox/site.yml`. (Historical: the original plan covered pve at .13 and truenas at .15; both were decommissioned in the 2026-03-14 migration.)
+Exceptions: server04 and pve03 run systemd Alloy with extended configs (SMART, journal). pve03 is provisioned by `proxmox/site.yml`; server04's config is edited in place on the host and is not yet in git. (Historical: `truenas` at .15 was decommissioned in the 2026-03-14 migration; its replacement `r720xd`, on the same hardware, was retired 2026-08-10. The `pve` hypervisor at .13 is still running but has never been brought under `proxmox/site.yml` and has no Alloy.)
 
 ---
 

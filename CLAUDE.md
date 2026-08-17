@@ -31,7 +31,7 @@ kubernetes/
 docker/                    # Docker infrastructure (Komodo GitOps) — see docker/CLAUDE.md
 proxmox/                   # Proxmox node config (Ansible + lae.proxmox role)
 ├── site.yml               # Main playbook
-├── inventory/hosts.yml    # R720XD standalone node
+├── inventory/hosts.yml    # pve03 standalone node (r720xd retired 2026-08-10)
 ├── group_vars/all/
 │   ├── vars.yml           # Non-secret config
 │   └── secrets.sops.yml   # SOPS-encrypted credentials

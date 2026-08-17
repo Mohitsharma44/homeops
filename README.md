@@ -11,9 +11,9 @@ GitOps repository for homelab infrastructure. Manages **Kubernetes** (via Flux +
 │  Kubernetes      │  Docker              │  Proxmox                       │
 │  (Flux + ArgoCD) │  (Komodo GitOps)     │  (Ansible)                     │
 │                  │                      │                                │
-│  3-node cluster  │  7 Docker hosts      │  R720XD standalone node        │
-│  Infrastructure: │  komodo, nvr, kasm,  │  ZFS storage (pool0, ssdpool0) │
-│   MetalLB,       │  omni, server04,     │  NFS exports, Sanoid snapshots │
+│  3-node cluster  │  7 Docker hosts      │  pve03 standalone node         │
+│  Infrastructure: │  komodo, nvr, kasm,  │  ZFS rpool                     │
+│   MetalLB,       │  omni, server04,     │  Sanoid snapshots              │
 │   Ingress,       │  storage,            │  Alloy + smartctl monitoring   │
 │   Cert-Manager,  │  racknerd-aegis      │                                │
 │   Rook-Ceph      │                      │                                │
@@ -43,8 +43,8 @@ GitOps repository for homelab infrastructure. Manages **Kubernetes** (via Flux +
 │   ├── stacks/                 # Compose files + SOPS-encrypted secrets
 │   └── periphery/              # Custom periphery image (SOPS + age)
 ├── proxmox/                    # Proxmox node config (Ansible)
-│   ├── site.yml                # Main playbook (lae.proxmox + NFS + Sanoid + monitoring)
-│   ├── inventory/hosts.yml     # R720XD at 192.168.11.15
+│   ├── site.yml                # Main playbook (lae.proxmox + Sanoid + monitoring)
+│   ├── inventory/hosts.yml     # pve03 at 192.168.11.12
 │   ├── group_vars/all/         # vars.yml + secrets.sops.yml
 │   └── templates/              # Alloy, Sanoid, smartctl-exporter configs
 └── docs/                       # Additional documentation
@@ -139,15 +139,23 @@ Manages Docker containers across 7 hosts via [Komodo](https://komo.do) Resource 
 
 Manages Proxmox VE node configuration via Ansible. See [proxmox/README.md](proxmox/README.md).
 
-### Node: R720XD (standalone)
+### Node: pve03 (standalone)
 
 | Property | Value |
 |----------|-------|
-| **IP** | 192.168.11.15 |
-| **Hardware** | Dell R720XD, 256GB RAM, 14 drives |
-| **ZFS Pools** | pool0 (21.8T raidz1), ssdpool0 (7.27T raidz1) — both encrypted (aes-256-gcm) |
-| **VMs** | none — the SeaweedFS VM is gone with this node |
-| **Services** | NFS export (/mnt/pool0/nvr for Frigate), Sanoid snapshots, Alloy, smartctl-exporter |
+| **IP** | 192.168.11.12 |
+| **Hardware** | AMD Ryzen 5 8500G Mini PC, 30GB RAM, 1TB NVMe |
+| **ZFS Pools** | rpool (OS + VM images only, not bulk media) |
+| **Services** | Sanoid snapshots, Alloy, smartctl-exporter |
+
+**Retired: R720XD (192.168.11.15), 2026-08-10.** It held ZFS `pool0` / `ssdpool0`, the
+SeaweedFS VM and the `/mnt/pool0/nvr` NFS export that Frigate recorded to. Nothing
+survived it; Frigate now records to an NFS share on the storage host, and the object
+store was rebuilt as Garage on the storage host. Do not re-add it to the inventory.
+
+**Not managed by this playbook: `pve` (192.168.11.13).** The hypervisor running the nvr,
+kasm, komodo and omni guests is absent from `proxmox/inventory/hosts.yml` and has no
+Alloy, smartctl-exporter or Sanoid. Known gap.
 
 ```bash
 cd proxmox
