@@ -27,10 +27,12 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 | kasm | 192.168.11.34 | root@kasm | newt, kasm-alloy |
 | omni | 192.168.11.30 | root@omni | omni, omni-alloy |
 | server04 | 192.168.11.17 | mohitsharma44@server04 | traefik, vaultwarden |
-| storage | 192.168.11.244 | mohitsharma44@192.168.11.244 | garage, garage-snapshotter, backup-verifier |
+| storage | 192.168.11.244 | mohitsharma44@192.168.11.244 | garage, garage-snapshotter, backup-verifier, storage-alloy, smartctl-exporter, md-exporter |
 | racknerd-aegis | <VPS_PUBLIC_IP> | <vps-user>@hs | aegis-gateway, aegis-pangolin, aegis-identity, aegis-periphery, aegis-newt, aegis-pangolin-client, racknerd-aegis-alloy |
 
 **Note**: server04 monitoring uses a systemd Alloy service (not a Komodo-managed Docker stack). See `docs/hardware-monitoring-plan.md` for details.
+
+**Note**: the storage host runs its own Alloy (`storage-alloy`), a standalone copy of `shared/alloy` — not an override, because Komodo cannot merge compose files. It exists so this host's scrape config lives in git rather than being appended to server04's in-place, ungoverned `/etc/alloy/config.alloy`. Keep the common parts in step with `stacks/shared/alloy/compose.yaml`. UGOS cannot take APT packages, so everything on that host is containers.
 
 ## Komodo Access
 - **UI**: https://komodo.sharmamohit.com

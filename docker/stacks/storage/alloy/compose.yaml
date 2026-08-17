@@ -1,0 +1,278 @@
+# Alloy on the storage host.
+#
+# This is a STANDALONE copy of stacks/shared/alloy, not an override. Komodo
+# uses only the first entry of file_paths and does not support compose file
+# merge, so customising a shared stack for one host means copying it. Same
+# arrangement as racknerd-aegis/alloy-override. Keep the common parts in step
+# with stacks/shared/alloy/compose.yaml when that changes.
+#
+# WHY THIS HOST RUNS ITS OWN ALLOY, when backup-verifier and Garage are
+# already scraped from server04:
+#
+# server04's /etc/alloy/config.alloy is a systemd Alloy edited in place on the
+# host and is NOT in git. Three storage-host scrape jobs have been added to it
+# so far, each time noting that the gap was getting worse. Ticket 07 closed
+# with "do not let it silently grow a fourth time". Adding node metrics, SMART
+# and md scrubs from server04 would have been the fourth, fifth and sixth.
+#
+# Running Alloy here instead puts this host's entire scrape config in the repo,
+# scrapes over loopback instead of the LAN, and removes the dependency where
+# server04 going down blinds us to the storage host. It costs memory on a box
+# where earlyoom is running -- hence the explicit limit below.
+#
+# UGOS constraint: everything here is containers. UGOS is a vendor OS on
+# squashfs + overlay, so APT packages and systemd units are not an option the
+# way they are on server04, and anything written outside /volume1 and /volume2
+# is erased by a firmware update.
+
+services:
+  alloy:
+    image: grafana/alloy:v1.18.1
+    container_name: alloy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/rootfs:ro
+      # Journal access, so kernel I/O errors are searchable in Loki. This is
+      # not generic tidiness: sdf has logged 634 UNC errors, and those surface
+      # in the kernel log and nowhere else. A SMART counter tells us a sector
+      # was remapped; the journal tells us which read failed and when.
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      # On /volume2 rather than a docker volume: /volume2 is real storage that
+      # survives firmware updates, and Alloy's WAL should not live on the
+      # overlay.
+      - /volume2/alloy/data:/var/lib/alloy/data
+    configs:
+      - source: alloy-config
+        target: /etc/alloy/config.alloy
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:unconfined
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_OVERRIDE
+      - DAC_READ_SEARCH
+      - SYS_PTRACE
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --stability.level=generally-available
+    # Supplies BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD, decrypted by the
+    # pre_deploy hook.
+    env_file: .env
+    environment:
+      # Docker reserves HOSTNAME, so the instance label travels as
+      # INSTANCE_NAME. "storage" matches the label backup-verifier, garage and
+      # garage-snapshotter already carry, so existing dashboards and the
+      # infra-object-store alert group keep working unchanged.
+      INSTANCE_NAME: storage
+      PROMETHEUS_URL: https://prometheus.sharmamohit.com/api/v1/write
+      LOKI_URL: https://loki.sharmamohit.com/loki/api/v1/push
+    healthcheck:
+      # The Alloy v1.16+ image dropped wget and curl. bash IS present, so use
+      # /dev/tcp to send a minimal HTTP/1.0 GET and grep the status line.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/12345 && printf 'GET /-/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          # Lower than the shared stack's 768M. This host has ~4.9 Gi
+          # available of 7.5 Gi and runs earlyoom, so an unbounded Alloy is a
+          # genuine risk to Garage rather than a theoretical one.
+          memory: 512M
+        reservations:
+          memory: 256M
+
+configs:
+  alloy-config:
+    content: |
+        // ============================================================
+        // Host metrics (node_exporter, built in to Alloy)
+        //
+        // No separate node-exporter container is needed -- Alloy's unix
+        // exporter IS node_exporter. Its mdadm collector supplies
+        // node_md_disks / node_md_state, which is how array degradation is
+        // detected; md-exporter below covers only what this cannot.
+        // ============================================================
+
+        prometheus.exporter.unix "host" {
+          procfs_path = "/host/proc"
+          sysfs_path  = "/host/sys"
+          rootfs_path = "/host/rootfs"
+        }
+
+        prometheus.scrape "host" {
+          targets         = prometheus.exporter.unix.host.targets
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "node"
+        }
+
+        // ============================================================
+        // SMART attributes (smartctl-exporter stack, :9633)
+        //
+        // 120s to match the exporter's own --smartctl.interval. Scraping
+        // faster than the exporter polls just re-serves a cached reading.
+        // ============================================================
+
+        prometheus.scrape "smartctl" {
+          targets         = [{"__address__" = "127.0.0.1:9633"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "120s"
+          job_name        = "smartctl"
+        }
+
+        // ============================================================
+        // md array scrub state (md-exporter stack, :9104)
+        // ============================================================
+
+        prometheus.scrape "md_exporter" {
+          targets         = [{"__address__" = "127.0.0.1:9104"}]
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "md-exporter"
+        }
+
+        // ============================================================
+        // Container metrics (cAdvisor)
+        // ============================================================
+
+        prometheus.exporter.cadvisor "containers" {
+          docker_host = "unix:///var/run/docker.sock"
+        }
+
+        prometheus.scrape "containers" {
+          targets         = prometheus.exporter.cadvisor.containers.targets
+          forward_to      = [prometheus.relabel.instance.receiver]
+          scrape_interval = "60s"
+          job_name        = "cadvisor"
+        }
+
+        // ============================================================
+        // Relabel: stamp instance=storage on everything scraped here
+        // ============================================================
+
+        prometheus.relabel "instance" {
+          forward_to = [prometheus.remote_write.prometheus.receiver]
+
+          rule {
+            action       = "replace"
+            target_label = "instance"
+            replacement  = sys.env("INSTANCE_NAME")
+          }
+        }
+
+        // ============================================================
+        // Remote write: push metrics to K8s Prometheus
+        // ============================================================
+
+        prometheus.remote_write "prometheus" {
+          // "infra" is a historical label meaning "non-K8s infrastructure".
+          external_labels = {
+            source = "infra",
+          }
+
+          endpoint {
+            url = sys.env("PROMETHEUS_URL")
+
+            basic_auth {
+              username = sys.env("BASIC_AUTH_USERNAME")
+              password = sys.env("BASIC_AUTH_PASSWORD")
+            }
+          }
+        }
+
+        // ============================================================
+        // Container logs
+        // ============================================================
+
+        discovery.docker "containers" {
+          host = "unix:///var/run/docker.sock"
+        }
+
+        discovery.relabel "docker_logs" {
+          targets = discovery.docker.containers.targets
+
+          rule {
+            source_labels = ["__meta_docker_container_name"]
+            target_label  = "container"
+          }
+          rule {
+            source_labels = ["__meta_docker_image_name"]
+            target_label  = "image"
+          }
+          rule {
+            action       = "replace"
+            target_label  = "instance"
+            replacement  = sys.env("INSTANCE_NAME")
+          }
+        }
+
+        loki.source.docker "containers" {
+          host       = "unix:///var/run/docker.sock"
+          targets    = discovery.relabel.docker_logs.output
+          forward_to = [loki.write.loki.receiver]
+        }
+
+        // ============================================================
+        // Host journal logs -- kernel I/O and ATA errors in particular
+        // ============================================================
+
+        loki.source.journal "host" {
+          forward_to    = [loki.process.journal.receiver]
+          relabel_rules = loki.relabel.journal.rules
+          labels = {
+            job = "journal",
+          }
+        }
+
+        loki.relabel "journal" {
+          forward_to = []
+
+          rule {
+            source_labels = ["__journal__systemd_unit"]
+            target_label  = "unit"
+          }
+          rule {
+            source_labels = ["__journal_priority_keyword"]
+            target_label  = "priority"
+          }
+        }
+
+        loki.process "journal" {
+          stage.static_labels {
+            values = {
+              instance = "storage",
+            }
+          }
+          forward_to = [loki.write.loki.receiver]
+        }
+
+        // ============================================================
+        // Loki write: push logs to K8s Loki
+        // ============================================================
+
+        loki.write "loki" {
+          endpoint {
+            url       = sys.env("LOKI_URL")
+            tenant_id = "homelab"
+
+            basic_auth {
+              username = sys.env("BASIC_AUTH_USERNAME")
+              password = sys.env("BASIC_AUTH_PASSWORD")
+            }
+          }
+        }

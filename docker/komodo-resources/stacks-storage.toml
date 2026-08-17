@@ -44,3 +44,46 @@ branch = "main"
 auto_update = true
 # No pre_deploy hook: this stack has no secrets. It reads and writes local
 # paths only and does not authenticate anywhere.
+
+[[stack]]
+name = "storage-alloy"
+description = "Alloy on the storage host: node metrics, SMART, md scrub state, cAdvisor, container + journal logs. Standalone copy of shared/alloy, NOT an override."
+tags = ["storage", "monitoring"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/alloy/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+auto_update = true
+# No `environment` block on purpose -- see the note on the garage stack above.
+# One would make Komodo write a top-level .env and keep passing --env-file
+# forever, shadowing the SOPS-decrypted .env in the compose directory.
+# INSTANCE_NAME is set inline in the compose file instead.
+[stack.config.pre_deploy]
+path = "docker/stacks/storage/alloy"
+command = "sops-decrypt.sh"
+
+[[stack]]
+name = "smartctl-exporter"
+description = "SMART attributes for all 7 physical devices on :9633. UGOS schedules the self-tests; this exports the numbers so Grafana can alert on the trend."
+tags = ["storage", "monitoring"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/smartctl-exporter/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+auto_update = true
+# No pre_deploy hook: this stack has no secrets. It reads devices and serves
+# metrics on the LAN; it authenticates nowhere.
+
+[[stack]]
+name = "md-exporter"
+description = "md array scrub freshness and mismatch_cnt on :9104 -- the parts of array health node_exporter's mdadm collector does not expose. Read-only; never drives mdadm."
+tags = ["storage", "monitoring"]
+[stack.config]
+server_id = "storage"
+file_paths = ["docker/stacks/storage/md-exporter/compose.yaml"]
+repo = "mohitsharma44/homeops"
+branch = "main"
+auto_update = true
+# No pre_deploy hook: no secrets.

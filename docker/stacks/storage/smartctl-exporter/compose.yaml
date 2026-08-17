@@ -1,0 +1,82 @@
+# SMART attributes for every physical device in the storage host.
+#
+# Why this exists when UGOS already has SMART monitoring:
+# UGOS Pro schedules the self-tests (Storage > Hard Drive > Status test plan)
+# and raises its own "bad sector warning". That covers *scheduling* and
+# *thresholds*. It does not put a single number into Thanos, so there is no
+# trend, no history, and no Slack. The observation that opened ticket 14 --
+# sdf's Reallocated_Sector_Ct moving 1320 -> 1376 in three days -- came from
+# diffing smartctl by hand on two consecutive days. A threshold alert would
+# never have shown it, because 1376 is nowhere near any threshold and the
+# drive still reports PASSED. What matters is the *slope*, and a slope needs a
+# time series.
+#
+# So: UGOS runs the tests, this exports the numbers, Grafana alerts on the
+# delta. The two are complements, not duplicates.
+#
+# Devices are listed explicitly rather than left to --smartctl.rescan. The
+# host has four loop devices and four zram devices that have no SMART data,
+# and the boot NVMe carries seven partitions that would each be probed. An
+# explicit list is both quieter and stable across reboots.
+#
+# Nothing is installed on UGOS itself. UGOS is a vendor OS on squashfs +
+# overlay; anything written outside /volume1 and /volume2 is erased by a
+# firmware update.
+
+services:
+  smartctl-exporter:
+    image: prometheuscommunity/smartctl-exporter:v0.14.0
+    container_name: smartctl-exporter
+    # host networking so the exporter binds 9633 directly on the host, matching
+    # backup-verifier (:9101) and garage-snapshotter (:9102). Alloy scrapes it
+    # over 127.0.0.1.
+    network_mode: host
+    restart: unless-stopped
+    # smartctl issues SG_IO / NVMe admin ioctls, which the kernel gates on
+    # capabilities rather than on file permissions -- being able to open
+    # /dev/sdf is not enough. Upstream's README simply says `privileged: true`;
+    # this is the least-privilege form of the same thing, and it was verified
+    # to actually return attributes for all seven devices before being
+    # committed. If a future image regresses here, the symptom is empty
+    # metrics with "permission denied" in the logs, not a failed start.
+    user: "0:0"
+    cap_add:
+      - SYS_RAWIO
+      - SYS_ADMIN
+    devices:
+      # md2 (RAID1, /volume2) -- Garage metadata, Komodo periphery state
+      - /dev/sda:/dev/sda
+      - /dev/sdb:/dev/sdb
+      # md1 (RAID6, /volume1) -- Garage data, Vaultwarden archive, Frigate
+      - /dev/sdc:/dev/sdc
+      - /dev/sdd:/dev/sdd
+      - /dev/sde:/dev/sde
+      # sdf is the drive this ticket exists for: 1376 reallocated sectors and
+      # 634 logged UNC errors as of 2026-08-16.
+      - /dev/sdf:/dev/sdf
+      # Boot device. Not in any array -- if it dies the NAS does not boot, and
+      # it is a low-end 128 GB part, so it is worth watching too.
+      - /dev/nvme0:/dev/nvme0
+      - /dev/nvme0n1:/dev/nvme0n1
+    command:
+      - --web.listen-address=:9633
+      # 120s: SMART reads spin up nothing on these drives, but polling is not
+      # free and the alerts all evaluate over hours or days. Matches the
+      # scrape_interval Alloy uses for this job.
+      - --smartctl.interval=120s
+      - --smartctl.device=/dev/sda
+      - --smartctl.device=/dev/sdb
+      - --smartctl.device=/dev/sdc
+      - --smartctl.device=/dev/sdd
+      - --smartctl.device=/dev/sde
+      - --smartctl.device=/dev/sdf
+      - --smartctl.device=/dev/nvme0n1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M

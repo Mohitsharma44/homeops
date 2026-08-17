@@ -1,0 +1,57 @@
+# Scrub state for the md arrays, on :9104.
+#
+# See md-exporter.sh for why this is not covered by node_exporter's mdadm
+# collector: the short version is that sysfs records that a scrub is running
+# but keeps no record of when one finished, so completion has to be observed
+# by polling and then persisted.
+#
+# Read-only everywhere. This container never writes to /sys and never touches
+# mdadm. The standing rule on this host is that `storage_serv` owns pool state
+# and anything topological goes through UGOS -- scrubs are scheduled in the
+# UGOS UI ("Data Organizing", monthly on the 18th at 03:00), not here. This
+# only measures.
+
+services:
+  md-exporter:
+    image: alpine:3.21
+    container_name: md-exporter
+    network_mode: host
+    restart: unless-stopped
+    # Root to read /sys/block/*/md/*, some of which is 0600.
+    user: "0:0"
+    volumes:
+      # :ro is load-bearing, not decorative -- writing `check` into
+      # sync_action from here would be driving the array behind UGOS's back.
+      - /sys:/sys:ro
+      # State survives container recreation. On /volume2 because everything
+      # outside /volume1 and /volume2 is erased by a UGOS firmware update.
+      - /volume2/md-exporter-state:/state
+      - ./md-exporter.sh:/usr/local/bin/md-exporter.sh:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # busybox-extras supplies the httpd applet; it is NOT in alpine's
+        # default busybox, and without it the container crash-loops on
+        # "httpd: not found". Learned on garage-snapshotter.
+        apk add --no-cache busybox-extras
+        mkdir -p /run/metrics
+        printf '# no poll yet\n' > /run/metrics/metrics
+        # httpd first, so the endpoint is already answering when the first
+        # scrape arrives even if the initial poll is slow or fails.
+        httpd -p 9104 -h /run/metrics
+        exec /usr/local/bin/md-exporter.sh
+    environment:
+      - STATE_DIR=/state
+      - METRICS_FILE=/run/metrics/metrics
+      - POLL_INTERVAL=60
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
