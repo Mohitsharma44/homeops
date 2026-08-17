@@ -1,0 +1,91 @@
+# TLS for the self-hosted drive (SFTPGo) — ticket 16e.
+#
+# WHY A SECOND CERTIFICATE EXISTS AT ALL
+# --------------------------------------
+# `default-tls-cert.yaml` in this directory covers `sharmamohit.com` and
+# `*.sharmamohit.com`. A DNS wildcard spans exactly ONE label, so
+# `*.sharmamohit.com` does NOT cover `drive.proxy.sharmamohit.com`, which sits
+# two labels down. Observed, not assumed — `openssl s_client -connect
+# 192.168.11.90:443 -servername drive.proxy.sharmamohit.com` returns
+# `subject=CN=*.sharmamohit.com`, `SAN: DNS:*.sharmamohit.com, DNS:sharmamohit.com`.
+# ingress-nginx serves that as its `default-ssl-certificate`, so an Ingress with
+# no `tls:` block gets a certificate that does not match the host and every LAN
+# browser shows a name-mismatch error.
+#
+# WHICH HALF OF THE SPLIT THIS SERVES
+# -----------------------------------
+# `drive.proxy.sharmamohit.com` is split-horizon (ticket 15, Q13/Q17):
+#   - public  -> 23.94.73.98 (the VPS), where the edge Traefik does TLS
+#     PASSTHROUGH for `*.proxy.sharmamohit.com` and PANGOLIN's Traefik terminates
+#     with its own per-name Let's Encrypt certificate (TLS-ALPN-01).
+#   - LAN     -> 192.168.11.90 (ingress-nginx), which terminates with THIS
+#     certificate.
+# This certificate is therefore the LAN path only. It is never presented to a
+# public visitor, and Pangolin's certificate is never presented on the LAN.
+#
+# WHY DNS01 AND NOT HTTP01
+# ------------------------
+# On the LAN the name resolves to a private address, and publicly it resolves to
+# the VPS — an HTTP01 challenge would be answered by Pangolin, not by this
+# cluster, and would fail. The `letsencrypt-prod` ClusterIssuer solves over
+# Route53 DNS01, which only needs a TXT record in the hosted zone and does not
+# care where the A record points.
+#
+# The issuer's solver selector is `dnsZones: ["sharmamohit.com"]`. Verified via
+# DoH that `proxy.sharmamohit.com` is NOT a delegated zone — its SOA is
+# `sharmamohit.com` (ns-1336.awsdns-39.org), so the selector matches and
+# hostedZoneID Z20MFT717KZF32 is the right zone for
+# `_acme-challenge.drive.proxy.sharmamohit.com`. Also verified that the public
+# `*.proxy.sharmamohit.com` wildcard does not shadow that challenge name: a
+# wildcard spans one label, the challenge name is three labels below `proxy`.
+#
+# WHY A SINGLE NAME AND NOT `*.proxy.sharmamohit.com`
+# ---------------------------------------------------
+# Considered and rejected — see the `## Answer` of
+# `.scratch/object-store-rehome/issues/16e-dns-and-cert.md`. Short version: the
+# public path never uses this certificate, so a wildcard's "serves future
+# services" upside is LAN-only; Kubernetes Secrets are namespaced and this
+# cluster runs no secret-replication controller, so a wildcard living in the
+# `sftpgo` namespace would not serve a future app in another namespace anyway;
+# and under ticket 15's Q3/Q11 (the drive is the only copy, with no backup) the
+# drive is the worst namespace in the cluster in which to park a credential
+# valid for every future `*.proxy` name.
+#
+# NAMESPACE COORDINATION — read before editing
+# --------------------------------------------
+# The Namespace is declared HERE so this file is self-sufficient: Flux's
+# kustomize-controller applies Namespace before Certificate within one
+# Kustomization, so the Certificate can never race a missing namespace.
+# Ticket 16c must therefore NOT add a second `sftpgo-ns.yaml` — a duplicate
+# Namespace in the same kustomization is a build error. Point the ArgoCD
+# Application's `destination.namespace` at `sftpgo`; `CreateNamespace=true` is
+# harmless and a no-op once this exists.
+#
+# The Ingress that 16c writes must reference this secret explicitly:
+#
+#   spec:
+#     tls:
+#       - hosts: ["drive.proxy.sharmamohit.com"]
+#         secretName: drive-tls-cert
+#
+# Omitting the `tls:` block silently falls back to `default-tls-cert`, which is
+# the failure this file exists to prevent.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sftpgo
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: drive-tls-cert
+  namespace: sftpgo
+spec:
+  secretName: drive-tls-cert
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: drive.proxy.sharmamohit.com
+  dnsNames:
+    - drive.proxy.sharmamohit.com

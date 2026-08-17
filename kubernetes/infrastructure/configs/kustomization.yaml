@@ -21,3 +21,8 @@ resources:
   - newt-credentials-secret.yaml
   - kaneo-ns.yaml
   - kaneo-secret.yaml
+  # Self-hosted drive (SFTPGo) — ticket 16e. Declares the `sftpgo` namespace and
+  # the TLS certificate for drive.proxy.sharmamohit.com. A separate certificate is
+  # required because default-tls-cert above is one label deep and does not cover a
+  # two-label-deep name. Read the header of the file before changing it.
+  - drive-tls-cert.yaml
