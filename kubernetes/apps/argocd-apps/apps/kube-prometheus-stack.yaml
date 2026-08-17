@@ -1463,6 +1463,248 @@ spec:
                       annotations:
                         summary: "Loki has ingested no logs in 30 minutes"
                         description: "Every Alloy agent can look perfectly healthy while this is true -- that is exactly how the last outage hid for 53 days. Either Loki is down, or it cannot write to the object store. Check loki-0 in the monitoring namespace first."
+                # md array health on the storage host.
+                #
+                # SCOPE NOTE, so this group is not duplicated by accident:
+                # the storage host's SMART attributes and host metrics are
+                # ALREADY covered. infra-smart-health's rules carry no instance
+                # filter at all, and infra-node-health's filter on
+                # source="infra" -- both of which the storage host now matches,
+                # as of the Alloy stack added 2026-08-17. Reallocated-sector
+                # growth, pending sectors, temperature, filesystem fullness and
+                # memory therefore needed NO new rules. What follows is only
+                # what nothing else covers: the md arrays themselves.
+                #
+                # node_exporter's mdadm collector supplies the membership
+                # metrics. It does not supply scrub state -- sysfs records that
+                # a check is running but keeps no record of when one finished
+                # -- so md_array_* comes from the md-exporter container beside
+                # Garage, which observes the transition and persists it.
+                - orgId: 1
+                  name: infra-storage-arrays
+                  folder: Infra Storage Arrays
+                  interval: 300s
+                  rules:
+                    - uid: md-array-degraded
+                      title: MdArrayDegraded
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # on(instance,device) is required, not stylistic:
+                            # node_md_disks carries a `state` label that
+                            # node_md_disks_required does not, so a default
+                            # vector match finds nothing and the rule would
+                            # silently never fire.
+                            expr: 'node_md_disks_required{source="infra"} - on(instance,device) node_md_disks{source="infra",state="active"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: 'Array {{ "{{" }} $labels.device {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} is missing a member disk'
+                        description: "md1 (RAID6, /volume1) holds Garage, the only off-host Vaultwarden backup copy and 60 days of Frigate recordings. md2 (RAID1, /volume2) holds Garage's metadata. RAID6 survives two failures and RAID1 one, but all four HDDs are same-batch IronWolfs at ~4.85 years, so treat a first failure as the start of a sequence. Do NOT drive mdadm by hand -- storage_serv owns pool state; repair through the UGOS UI."
+                    - uid: md-array-failed-disks
+                      title: MdArrayFailedDisks
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'node_md_disks{source="infra",state="failed"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 5m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: critical
+                      annotations:
+                        summary: '{{ "{{" }} $labels.device {{ "}}" }} on {{ "{{" }} $labels.instance {{ "}}" }} has a disk marked failed'
+                        description: "Distinct from MdArrayDegraded: this fires while the kernel still counts the disk as a member but has marked it faulty. sdf is the expected first candidate -- 1376 reallocated sectors and 634 logged UNC errors as of 2026-08-17. All six bays are full and the free M.2 slots are NVMe-only, so there is no hot spare: replacement means a physical swap."
+                    - uid: md-scrub-stale
+                      title: MdArrayScrubStale
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Scoped to md1 deliberately. UGOS's scrub feature
+                            # ("Data Organizing") supports RAID5/6 only, so md2
+                            # -- a RAID1 -- has no scheduled scrub and would
+                            # make this rule fire forever. A rule that fires
+                            # forever is worse than no rule; it is how alerting
+                            # stops being believed. md2's lack of a scrub path
+                            # is a real open gap, tracked in ticket 14, not
+                            # something to paper over with an alert nobody can
+                            # action.
+                            #
+                            # A completion timestamp of 0 means "never
+                            # observed", which yields a huge age and fires --
+                            # that is intended, not a bug.
+                            expr: 'time() - md_array_scrub_last_completion_timestamp_seconds{source="infra",array="md1"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  # 40 days. The UGOS schedule is monthly (18th,
+                                  # 03:00); 40 days tolerates a long scrub and a
+                                  # slipped start without tolerating a schedule
+                                  # that has silently stopped.
+                                  params: [3456000]
+                            refId: C
+                      for: 1h
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Array {{ "{{" }} $labels.array {{ "}}" }} has not been scrubbed in over 40 days'
+                        description: "UGOS runs the scrub from Storage > Data Organizing, monthly on the 18th at 03:00. If this fires, that schedule has stopped or is failing. Scrubbing is what stops a latent unreadable sector on a surviving drive from surfacing mid-rebuild, which is the exact failure RAID6 was chosen to defend against."
+                    - uid: md-parity-mismatch
+                      title: MdArrayParityMismatch
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            # Gated on the last sync ACTUALLY having been a
+                            # check. mismatch_cnt is meaningless otherwise: on
+                            # 2026-08-17 md1 read 7,157,504,848 purely as an
+                            # artifact of the RAID5->RAID6 conversion, where the
+                            # kernel counts first-time parity computation as
+                            # mismatches. Without this gate the rule would have
+                            # fired immediately and permanently on a healthy
+                            # array.
+                            expr: 'md_array_mismatch_cnt{source="infra"} > 0 and on(instance,array) md_array_last_sync_was_check{source="infra"} == 1'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: gt
+                                  params: [0]
+                            refId: C
+                      for: 30m
+                      # NoData is correct here and the exception in this group:
+                      # the gated expression returns an empty vector whenever
+                      # the last sync was not a check, which is the normal state
+                      # between scrubs. Alerting on NoData would fire
+                      # continuously for exactly that reason.
+                      noDataState: OK
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: 'Scrub found {{ "{{" }} $value {{ "}}" }} parity mismatches on {{ "{{" }} $labels.array {{ "}}" }}'
+                        description: "The most recent scrub found sectors where parity disagreed with data. On RAID6 this is the nearest thing to a silent-corruption signal. Correlate with SMART on the member drives and with kernel I/O errors in Loki (instance=storage, job=journal) before concluding which disk is at fault."
+                    - uid: md-exporter-down
+                      title: MdExporterDown
+                      condition: C
+                      data:
+                        - refId: A
+                          relativeTimeRange:
+                            from: 600
+                            to: 0
+                          datasourceUid: thanos
+                          model:
+                            expr: 'up{job="md-exporter"}'
+                            refId: A
+                        - refId: B
+                          datasourceUid: __expr__
+                          model:
+                            type: reduce
+                            expression: A
+                            reducer: last
+                            refId: B
+                        - refId: C
+                          datasourceUid: __expr__
+                          model:
+                            type: threshold
+                            expression: B
+                            conditions:
+                              - evaluator:
+                                  type: lt
+                                  params: [1]
+                            refId: C
+                      for: 15m
+                      noDataState: Alerting
+                      execErrState: Alerting
+                      labels:
+                        severity: warning
+                      annotations:
+                        summary: "md-exporter on the storage host is not being scraped"
+                        description: "The scrub-freshness and parity-mismatch rules above are blind while this is true. Same shape as GarageSnapshotterDown: the alert that guards a freshness metric needs its own liveness alert, or a dead exporter reads as a healthy array."
         alertmanager:
           config:
             global:
