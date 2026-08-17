@@ -1,6 +1,6 @@
 # Proxmox VE Ansible Playbook
 
-Automated configuration for Proxmox VE nodes (currently R720XD standalone) using Ansible and the [lae.proxmox](https://github.com/lae/ansible-role-proxmox) role.
+Automated configuration for Proxmox VE nodes (currently `pve03` standalone) using Ansible and the [lae.proxmox](https://github.com/lae/ansible-role-proxmox) role.
 
 ## What Gets Configured
 
@@ -12,7 +12,6 @@ Automated configuration for Proxmox VE nodes (currently R720XD standalone) using
   - Datacenter settings
 
 - **Infrastructure components:**
-  - NFS exports (for NVR data sharing)
   - Sanoid (ZFS snapshot automation)
   - Alloy (Grafana observability agent)
   - smartctl-exporter (SMART disk health metrics)
@@ -20,7 +19,7 @@ Automated configuration for Proxmox VE nodes (currently R720XD standalone) using
 ## Prerequisites
 
 1. Fresh Proxmox VE installation (8.0+)
-2. ZFS pools already imported (e.g., `pool0`, `ssdpool0`)
+2. ZFS pools already imported (e.g., `rpool`)
 3. Ansible 2.10+ installed on control machine
 4. SSH access as `root` to the Proxmox host
 5. Python 3 available on the Proxmox host
@@ -61,12 +60,22 @@ Edit `inventory/hosts.yml` to add/modify Proxmox nodes:
 
 ```yaml
 all:
-  hosts:
-    r720xd:
-      ansible_host: 192.168.11.15
-      ansible_user: root
-      ansible_python_interpreter: /usr/bin/python3
+  children:
+    pve_nodes:
+      hosts:
+        pve03:
+          ansible_host: 192.168.11.12
+          ansible_user: root
+          ansible_python_interpreter: /usr/bin/python3
 ```
+
+**Retired: `r720xd` (192.168.11.15), 2026-08-10.** Do not re-add it. Its ZFS pools, its
+`/mnt/pool0/nvr` NFS export and its Sanoid datasets are gone with the hardware; Frigate
+now records to an NFS share on the storage host.
+
+**Not in this inventory: `pve` (192.168.11.13).** The hypervisor running the nvr, kasm,
+komodo and omni guests has never been brought under this playbook and runs no Alloy,
+smartctl-exporter or Sanoid. Known gap, not a deliberate exclusion.
 
 ## Variables
 
@@ -79,7 +88,6 @@ all:
 - `pve_zfs_options` - ZFS tuning (ARC cache size)
 - `pve_storages` - Storage backend definitions
 - `pve_users`, `pve_groups`, `pve_acls` - User and permissions
-- `nfs_exports` - NFS export paths and options
 - `sanoid_datasets` - ZFS datasets to snapshot
 - `smartctl_exporter_*` - SMART exporter configuration
 - `alloy_instance_name` - Node name for metrics labels
@@ -97,10 +105,10 @@ Edit `group_vars/all/vars.yml`:
 
 ```yaml
 pve_storages:
-  - name: pool0-store
+  - name: rpool-store
     type: zfspool
     content: ["images", "rootdir"]
-    pool: pool0
+    pool: rpool
 ```
 
 ### Modifying Snapshot Retention
@@ -138,7 +146,7 @@ pve_acls:
 Verify SSH access:
 
 ```bash
-ssh -i /path/to/key root@192.168.11.15
+ssh -i /path/to/key root@192.168.11.12
 ```
 
 ### SOPS decryption issues
@@ -167,7 +175,7 @@ Once deployed, metrics flow to:
 - **Loki**: `https://loki.sharmamohit.com`
 
 Dashboards and alerts can reference labels:
-- `instance=r720xd` (hostname)
+- `instance=pve03` (hostname)
 - `source=infra` (infrastructure origin)
 - `job=node|smartctl|journal` (metric job type)
 

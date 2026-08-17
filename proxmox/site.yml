@@ -11,92 +11,18 @@
     - name: Gather facts
       ansible.builtin.setup:
 
-    # ── Local SSD Pool (R720XD only) ─────────────────
-    - name: Check if local-ssd pool is active
-      ansible.builtin.command: zpool list {{ local_ssd_pool.name }}
-      register: local_ssd_pool_active
-      changed_when: false
-      failed_when: false
-      when: local_ssd_pool is defined
-
-    - name: Check if local-ssd pool is importable but not active
-      ansible.builtin.shell: zpool import 2>&1 | grep -q "pool:.*{{ local_ssd_pool.name }}"
-      register: local_ssd_pool_importable
-      changed_when: false
-      failed_when: false
-      when: local_ssd_pool is defined and local_ssd_pool_active.rc != 0
-
-    - name: Import existing local-ssd pool if found
-      ansible.builtin.command: zpool import {{ local_ssd_pool.name }}
-      when: >
-        local_ssd_pool is defined
-        and local_ssd_pool_active.rc != 0
-        and local_ssd_pool_importable.rc == 0
-
-    - name: Wipe old partition tables on local-ssd drives
-      ansible.builtin.command: sgdisk --zap-all {{ item }}
-      loop: "{{ local_ssd_pool.drives }}"
-      when: >
-        local_ssd_pool is defined
-        and local_ssd_pool_active.rc != 0
-        and local_ssd_pool_importable.rc != 0
-
-    - name: Create local-ssd ZFS mirror pool
-      ansible.builtin.command: >
-        zpool create
-        -o ashift={{ local_ssd_pool.properties.ashift }}
-        -O compression={{ local_ssd_pool.properties.compression }}
-        -O atime={{ local_ssd_pool.properties.atime }}
-        -O acltype=posixacl
-        -O xattr=sa
-        -O dnodesize=auto
-        {{ local_ssd_pool.name }}
-        {{ local_ssd_pool.vdev }}
-        {{ local_ssd_pool.drives | join(' ') }}
-      when: >
-        local_ssd_pool is defined
-        and local_ssd_pool_active.rc != 0
-        and local_ssd_pool_importable.rc != 0
+    # The local-ssd ZFS mirror creation tasks that lived here were r720xd-only and
+    # were removed when that node was retired on 2026-08-10. Recover them from git
+    # if another node ever needs a pool built from bare drives.
 
   roles:
     - role: lae.proxmox
 
   tasks:
-    # ── NFS Export (only hosts with nfs_exports defined) ──
-    - name: Install NFS kernel server
-      ansible.builtin.apt:
-        name:
-          - nfs-kernel-server
-          - nfs-common
-        state: present
-      when: nfs_exports is defined and nfs_exports | length > 0
-
-    - name: Ensure NFS export directories exist
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      loop: "{{ nfs_exports }}"
-      when: nfs_exports is defined
-
-    - name: Configure NFS exports
-      ansible.builtin.lineinfile:
-        path: /etc/exports
-        line: "{{ item.path }} {{ item.network }}({{ item.options }})"
-        regexp: "^{{ item.path | regex_escape }}\\s"
-        create: yes
-      loop: "{{ nfs_exports }}"
-      when: nfs_exports is defined
-      notify: reload nfs exports
-
-    - name: Enable and start NFS server
-      ansible.builtin.systemd:
-        name: nfs-kernel-server
-        state: started
-        enabled: yes
-      when: nfs_exports is defined and nfs_exports | length > 0
+    # NFS export tasks lived here. The only export was /mnt/pool0/nvr on the r720xd,
+    # for Frigate. That node was retired on 2026-08-10 and Frigate's recordings now
+    # come from an NFS share on the storage host (192.168.11.244), so no Proxmox node
+    # serves NFS any more.
 
     # ── Sanoid (ZFS Snapshots) ────────────────────────
     - name: Install Sanoid
@@ -276,9 +202,6 @@
         enabled: yes
 
   handlers:
-    - name: reload nfs exports
-      ansible.builtin.command: exportfs -ra
-
     - name: restart sanoid timer
       ansible.builtin.systemd:
         name: sanoid.timer
