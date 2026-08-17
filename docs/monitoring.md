@@ -170,20 +170,64 @@ Grafana rules → Grafana contact point → Slack (#homelab-alerts)
 
 Grafana evaluates its own alert rules against the Thanos datasource (`uid: thanos`) and sends notifications to Slack via a provisioned contact point. Configuration is in `kubernetes/apps/argocd-apps/apps/kube-prometheus-stack.yaml` under `grafana.alerting`.
 
-**18 rules** across 4 folders:
+**32 rules** across 6 folders:
 
 | Folder | Eval Interval | Rules |
 |--------|---------------|-------|
 | Infra Node Health | 60s | InfraHostDown, FilesystemSpaceLow, FilesystemSpaceCritical, FilesystemWillFillIn24h, HighMemoryUsage, HighCpuLoad |
 | Infra SMART Health | 60s | SmartDiskUnhealthy, SmartReallocatedSectorsGrowing, SmartPendingSectorsGrowing, SmartDiskTemperatureHigh, SmartDiskTemperatureCritical, SmartNvmeMediaErrors, SmartNvmeCriticalWarning, SmartExporterDown |
-| Infra ZFS Health | 30s | ZfsPoolDegraded, ZfsPoolFaulted, ZfsPoolUnavail |
+| Infra Backup Health | 300s | VaultwardenOffHostBackupStale, BackupVerifierDown |
+| Infra Object Store | 300s | ObjectStoreDown, ObjectStoreUnavailable, ObjectStoreBucketsMissing, ObjectStoreKeysMissing, ObjectStoreServerErrors, ObjectStoreMetadataDiskLow, ObjectStoreResyncErrors, GarageSnapshotStale, GarageSnapshotterDown, LokiNotIngesting |
+| Infra Storage Arrays | 300s | MdArrayDegraded, MdArrayFailedDisks, MdArrayScrubStale, MdArrayParityMismatch, MdExporterDown |
 | Infra Watchdog | 60s | GrafanaAlertingWatchdog |
+
+**Infra Node Health and Infra SMART Health carry no host filter** — the SMART rules have no
+instance selector at all, and the node rules match only `source="infra"`. Any new infra host
+is covered by all 14 the moment its metrics arrive; do not write per-host duplicates.
 
 The watchdog rule (`vector(1)`) fires continuously to verify the Grafana→Slack pipeline is working. If the periodic notification stops, the pipeline is broken.
 
+**Infra ZFS Health was removed on 2026-08-17.** Nothing in the estate runs ZFS since the
+TrueNAS/r720xd retirement — `pve` has no zpools and `pve03` is powered off. It is worth
+recording *how* it had to be removed, because it was actively harmful:
+
+- Its three rules had `noDataState: NoData` and `severity: critical`. With no host reporting
+  `node_zfs_zpool_state`, all three sat permanently in NoData — **which in Grafana is a
+  notifying state** — and the notification policy routes `severity = critical` to Slack with
+  `repeat_interval: 1h`. That was **~72 Slack messages a day** of pure noise.
+- **Deleting the group from the provisioning file did not remove the rules.** Grafana's
+  alert-rule file provisioning only adds and updates; it never prunes, and provisioned rules
+  cannot be deleted via the UI or API. They survived a Grafana restart still evaluating.
+  Removing them required listing their uids under a `deleteRules:` key alongside `groups:`.
+  **Retiring any rule needs both steps.**
+
 ### Alertmanager
 
-Alertmanager is still deployed but only routes Prometheus-generated alerts to the `"null"` receiver (silencing them). All notification delivery is handled by Grafana Alerting via Slack.
+Alertmanager is still deployed but its **only receiver is `"null"`**, and the default route
+sends everything there. **No Prometheus-generated alert reaches Slack** — all notification
+delivery is Grafana Alerting.
+
+Two consequences worth knowing:
+
+- The `additionalPrometheusRulesMap` groups (`infra-node-health`, `infra-smart-health`,
+  `infra-watchdog`) duplicate their Grafana counterparts and **can never notify**. They are
+  effectively dead weight kept for PromQL-side visibility in `ALERTS`.
+- A Prometheus rule firing forever is therefore *silent*, which makes it easy to miss. The
+  Talos control-plane scrapes were broken for 184 days, firing 12 alerts continuously, and
+  nobody saw it — see below.
+
+### Control-plane component monitoring is disabled
+
+`kubeControllerManager`, `kubeScheduler` and `kubeProxy` are set to `enabled: false`. Talos
+binds those components to localhost, but the chart creates Services pointing at node IPs
+(`:10257`, `:10259`, `:10249`), so `up == 0` was permanently true and
+`Kube*InstanceUnreachable` plus `TargetDown` fired continuously from install. `enabled: false`
+removes the Service, ServiceMonitor and rules together.
+
+**Tradeoff accepted:** no metrics for those three components — not a regression, since the
+scrapes never once succeeded. Obtaining them for real needs an Omni machine-config patch
+(`bind-address: 0.0.0.0` on controller-manager and scheduler, `metricsBindAddress` on
+kube-proxy) rolled across every node.
 
 ### Threshold Sync Requirement
 
