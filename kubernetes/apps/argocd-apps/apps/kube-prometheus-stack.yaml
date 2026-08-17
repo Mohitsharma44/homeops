@@ -774,119 +774,6 @@ spec:
                       annotations:
                         summary: 'smartctl_exporter down on {{ "{{" }} $labels.instance {{ "}}" }}'
                 - orgId: 1
-                  name: infra-zfs-health
-                  folder: Infra ZFS Health
-                  interval: 30s
-                  rules:
-                    - uid: zfs-degraded
-                      title: ZfsPoolDegraded
-                      condition: C
-                      data:
-                        - refId: A
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: thanos
-                          model:
-                            expr: 'node_zfs_zpool_state{state="degraded",source="infra"}'
-                            refId: A
-                        - refId: B
-                          datasourceUid: __expr__
-                          model:
-                            type: reduce
-                            expression: A
-                            reducer: last
-                            refId: B
-                        - refId: C
-                          datasourceUid: __expr__
-                          model:
-                            type: threshold
-                            expression: B
-                            conditions:
-                              - evaluator:
-                                  type: gt
-                                  params: [0]
-                            refId: C
-                      for: 5m
-                      noDataState: NoData
-                      execErrState: Error
-                      labels:
-                        severity: critical
-                      annotations:
-                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is DEGRADED on {{ "{{" }} $labels.instance {{ "}}" }}'
-                    - uid: zfs-faulted
-                      title: ZfsPoolFaulted
-                      condition: C
-                      data:
-                        - refId: A
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: thanos
-                          model:
-                            expr: 'node_zfs_zpool_state{state="faulted",source="infra"}'
-                            refId: A
-                        - refId: B
-                          datasourceUid: __expr__
-                          model:
-                            type: reduce
-                            expression: A
-                            reducer: last
-                            refId: B
-                        - refId: C
-                          datasourceUid: __expr__
-                          model:
-                            type: threshold
-                            expression: B
-                            conditions:
-                              - evaluator:
-                                  type: gt
-                                  params: [0]
-                            refId: C
-                      for: 1m
-                      noDataState: NoData
-                      execErrState: Alerting
-                      labels:
-                        severity: critical
-                      annotations:
-                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is FAULTED on {{ "{{" }} $labels.instance {{ "}}" }}'
-                    - uid: zfs-unavail
-                      title: ZfsPoolUnavail
-                      condition: C
-                      data:
-                        - refId: A
-                          relativeTimeRange:
-                            from: 600
-                            to: 0
-                          datasourceUid: thanos
-                          model:
-                            expr: 'node_zfs_zpool_state{state="unavail",source="infra"}'
-                            refId: A
-                        - refId: B
-                          datasourceUid: __expr__
-                          model:
-                            type: reduce
-                            expression: A
-                            reducer: last
-                            refId: B
-                        - refId: C
-                          datasourceUid: __expr__
-                          model:
-                            type: threshold
-                            expression: B
-                            conditions:
-                              - evaluator:
-                                  type: gt
-                                  params: [0]
-                            refId: C
-                      for: 1m
-                      noDataState: NoData
-                      execErrState: Alerting
-                      labels:
-                        severity: critical
-                      annotations:
-                        summary: 'ZFS pool {{ "{{" }} $labels.zpool {{ "}}" }} is UNAVAILABLE on {{ "{{" }} $labels.instance {{ "}}" }}'
-                - orgId: 1
                   name: infra-watchdog
                   folder: Infra Watchdog
                   interval: 60s
@@ -1747,6 +1634,36 @@ spec:
               memory: 64Mi
             limits:
               memory: 128Mi
+        # Control-plane component monitoring is DISABLED on purpose.
+        #
+        # Talos binds kube-controller-manager, kube-scheduler and kube-proxy to
+        # localhost. The chart nonetheless creates Services and Endpoints
+        # pointing at the node IPs (:10257, :10259, :10249), so every scrape
+        # fails and `up{job="kube-controller-manager"} == 0` is permanently
+        # true. That is a config mismatch, not an outage.
+        #
+        # The result was 12 alerts firing continuously for 184 days --
+        # Kube{ControllerManager,Scheduler,Proxy}InstanceUnreachable across
+        # three nodes, plus a TargetDown for each of the three jobs -- each
+        # re-notified to Slack every 6h by `repeat_interval`. It was the bulk
+        # of the alert spam, and it drowned real signal.
+        #
+        # `enabled: false` removes the Service, the ServiceMonitor AND the
+        # associated rules together, which is why it is the right lever rather
+        # than silencing the alerts downstream.
+        #
+        # NOTE the tradeoff being accepted: there are now no metrics for these
+        # three components. That is not a regression -- the scrapes have never
+        # once succeeded. Getting them for real means an Omni machine-config
+        # patch (bind-address 0.0.0.0 on controller-manager and scheduler,
+        # metricsBindAddress on kube-proxy) applied as a rolling change across
+        # every node, which is its own piece of work.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
         kubeStateMetrics:
           enabled: true
         kube-state-metrics:
@@ -1877,31 +1794,6 @@ spec:
                       severity: warning
                     annotations:
                       summary: "smartctl_exporter down on {{ $labels.instance }}"
-          infra-zfs-health:
-            groups:
-              - name: infra-zfs-health
-                rules:
-                  - alert: ZfsPoolDegraded
-                    expr: node_zfs_zpool_state{state="degraded", source="infra"} == 1
-                    for: 5m
-                    labels:
-                      severity: critical
-                    annotations:
-                      summary: "ZFS pool {{ $labels.zpool }} is DEGRADED on {{ $labels.instance }}"
-                  - alert: ZfsPoolFaulted
-                    expr: node_zfs_zpool_state{state="faulted", source="infra"} == 1
-                    for: 1m
-                    labels:
-                      severity: critical
-                    annotations:
-                      summary: "ZFS pool {{ $labels.zpool }} is FAULTED on {{ $labels.instance }}"
-                  - alert: ZfsPoolUnavail
-                    expr: node_zfs_zpool_state{state="unavail", source="infra"} == 1
-                    for: 1m
-                    labels:
-                      severity: critical
-                    annotations:
-                      summary: "ZFS pool {{ $labels.zpool }} is UNAVAILABLE on {{ $labels.instance }}"
           infra-watchdog:
             groups:
               - name: infra-watchdog

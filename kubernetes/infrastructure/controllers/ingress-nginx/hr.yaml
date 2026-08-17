@@ -78,19 +78,35 @@ spec:
               annotations:
                 description: ssl certificate(s) will expire in less then a week
                 summary: renew expiring certificates to avoid downtime
+            # These two MUST use rate(). The upstream-example form divides raw
+            # counters -- `sum(requests{status=~"5.+"}) / sum(requests)` -- which
+            # is the ratio over all history since the counters started, not the
+            # ratio now. Counters only ever increase, so once that crosses the
+            # threshold it can NEVER come back down and the alert latches
+            # permanently.
+            #
+            # That is not hypothetical: NGINXTooMany500s fired continuously
+            # because the cumulative ratio sat at 22.3% while the actual 30m
+            # rate was 0%. It re-notified Slack every 6h reporting an incident
+            # that had long since ended. NGINXTooMany400s had the identical bug
+            # and would have latched the same way on its first bad spell.
+            #
+            # 15m windows: long enough that a single failed request on a quiet
+            # ingress does not trip 5%, short enough to still catch a real
+            # outage promptly.
             - alert: NGINXTooMany500s
-              expr: 100 * ( sum( nginx_ingress_controller_requests{status=~"5.+"} ) / sum(nginx_ingress_controller_requests) ) > 5
-              for: 1m
+              expr: 100 * ( sum(rate(nginx_ingress_controller_requests{status=~"5.."}[15m])) / sum(rate(nginx_ingress_controller_requests[15m])) ) > 5
+              for: 5m
               labels:
                 severity: warning
               annotations:
                 description: Too many 5XXs
-                summary: More than 5% of all requests returned 5XX, this requires your attention
+                summary: More than 5% of requests in the last 15 minutes returned 5XX, this requires your attention
             - alert: NGINXTooMany400s
-              expr: 100 * ( sum( nginx_ingress_controller_requests{status=~"4.+"} ) / sum(nginx_ingress_controller_requests) ) > 5
-              for: 1m
+              expr: 100 * ( sum(rate(nginx_ingress_controller_requests{status=~"4.."}[15m])) / sum(rate(nginx_ingress_controller_requests[15m])) ) > 5
+              for: 5m
               labels:
                 severity: warning
               annotations:
                 description: Too many 4XXs
-                summary: More than 5% of all requests returned 4XX, this requires your attention
+                summary: More than 5% of requests in the last 15 minutes returned 4XX, this requires your attention
