@@ -80,3 +80,19 @@ services:
       resources:
         limits:
           memory: 128M
+
+# EXPECTED LOG NOISE, verified 2026-08-17 on first deploy:
+#
+#   level=WARN msg="S.M.A.R.T. output reading" err="exit status 64" device="/dev/sdf"
+#   level=WARN msg="The device error log contains records of errors" device="/dev/sdf"
+#
+# This is not a failure and does NOT mean sdf was skipped. smartctl's exit code
+# is a bitmask; 64 is bit 6, "the device error log contains records of errors",
+# which is permanently true for sdf (634 logged UNC errors). Collection
+# succeeded: sdf exports 110 series, the same as its healthy siblings, and its
+# Reallocated_Sector_Ct reads 1376, matching a hand-run smartctl.
+#
+# Consequence for alerting: do NOT alert on
+# `smartctl_device_smartctl_exit_status != 0`. It is pinned at 64 for sdf and
+# would fire forever. A rule that fires forever is worse than no rule -- it is
+# how alerting stops being believed. Alert on the attributes instead.

@@ -41,7 +41,14 @@ services:
         # httpd first, so the endpoint is already answering when the first
         # scrape arrives even if the initial poll is slow or fails.
         httpd -p 9104 -h /run/metrics
-        exec /usr/local/bin/md-exporter.sh
+        # Invoked via `sh <script>` rather than executed directly, so the
+        # committed file mode is not load-bearing. The first deploy of this
+        # stack crash-looped on "Permission denied" because the script landed
+        # as 644 -- a bind-mounted :ro script cannot be chmod'ed at runtime,
+        # so the mode bit has to be right in git. It now is (755, matching
+        # snapshot.sh), but `sh` makes that belt-and-braces rather than the
+        # single point of failure.
+        exec sh /usr/local/bin/md-exporter.sh
     environment:
       - STATE_DIR=/state
       - METRICS_FILE=/run/metrics/metrics
