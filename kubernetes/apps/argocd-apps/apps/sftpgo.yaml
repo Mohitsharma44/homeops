@@ -1,0 +1,465 @@
+# The self-hosted drive — SFTPGo on minipcs, backed by Garage. Ticket 16.
+#
+# Decisions live in .scratch/object-store-rehome/issues/15-self-hosted-drive-on-garage.md;
+# the deployment research that produced these exact values is in 16a; the bucket
+# and key are 16b's; the certificate and the split-horizon analysis are 16e's;
+# the PocketID client is 16d's. Read the traps below before changing anything —
+# each one was measured, not guessed.
+#
+# ---------------------------------------------------------------------------
+# WHY repoURL HAS NO oci:// SCHEME
+# ---------------------------------------------------------------------------
+# The chart is published only as an OCI artifact and `helm` wants
+# `oci://ghcr.io/sftpgo/helm-charts/sftpgo`. Argo CD does not take that form.
+# At the version running here (argocd v2.14.11),
+# reposerver/repository/repository.go:1057 says verbatim: "trimming oci:// prefix
+# since it is currently not supported by Argo CD (OCI repos just have no
+# scheme)", and repository.go:2443 decides OCI with
+# `repo.EnableOCI || helm.IsHelmOciRepo(repo.Repo)` where
+# util/helm/client.go:397 returns true only when url.Parse yields an EMPTY host —
+# i.e. only when there is no scheme. Writing `oci://...` here would make Argo CD
+# go looking for an index.yaml and fail. No Repository Secret is needed; ghcr.io
+# serves this chart anonymously and OCI is auto-detected from the scheme-less URL.
+#
+# The OCI TAG HAS NO LEADING v. The git tag is v0.47.0, the registry tag is
+# 0.47.0. `targetRevision: v0.47.0` does not resolve.
+#
+# ---------------------------------------------------------------------------
+# THE THREE WAYS THIS DEPLOYMENT CAN BREAK SILENTLY
+# ---------------------------------------------------------------------------
+# 1. RollingUpdate on an RWO PVC deadlocks. The chart renders `strategy:` only
+#    when deploymentStrategy is non-empty and ships `{}`, so the Kubernetes
+#    default (RollingUpdate) applies: the new pod is created before the old one
+#    is deleted, cannot mount the Ceph RWO volume the old pod still holds, and
+#    the rollout wedges. This estate has already lived through that once with
+#    Grafana. `deploymentStrategy: {type: Recreate}` below is not optional.
+# 2. distroless images have NO SQLITE. sftpgo's release workflow builds the
+#    distroless variant with CGO_ENABLED=0 and FEATURES=...,nosqlite
+#    (.github/workflows/docker.yml:67-71), and internal/dataprovider/sqlite.go is
+#    `//go:build !nosqlite && cgo`. Choosing `image.variant: distroless-slim` for
+#    a smaller attack surface would make SFTPGo refuse to start against a sqlite
+#    data provider. The plain Debian tag pinned below is built with
+#    FEATURES=...,unixcrypt and CGO on.
+# 3. ingress-nginx defaults to a 1 MiB body. The controller ConfigMap in this
+#    cluster has ZERO data keys, so the chart default `client_max_body_size 1m`
+#    is what is running — read out of the live pod's nginx.conf, not assumed. An
+#    un-annotated Ingress gets 1 048 576 B and uploads fail on the first photo.
+#    The four annotations below are all load-bearing; see the upload section.
+#
+# ---------------------------------------------------------------------------
+# THE UPLOAD CEILING — TWO BINDING HOPS, ONE OF THEM IN SECONDS
+# ---------------------------------------------------------------------------
+# Bytes:   ingress-nginx client_max_body_size 1 m -> removed here with
+#          proxy-body-size: "0".
+# Seconds: Pangolin's Traefik `websecure` entrypoint runs with the Traefik
+#          default readTimeout of 1m0s (read live from the container's own
+#          /api/entrypoints). In Go that is a hard cap on the WHOLE request
+#          INCLUDING THE BODY, per-stream on HTTP/2 and not reset by activity.
+#          So on the PUBLIC path any single upload longer than 60 s is severed
+#          mid-body no matter what the byte limits say — roughly 150 MB at a
+#          typical residential uplink. That hop does not exist on the LAN path.
+#
+# The design goal is a clean refusal, never a stall at 90%, so SFTPGo is made
+# the lowest limit: it is the only hop that can return an error the application
+# renders in the page the user is looking at. nginx returns a bare 413 and
+# Traefik returns nothing at all. Hence max_upload_file_size below.
+#
+# `proxy-request-buffering: "off"` is required, not cosmetic: the live config has
+# `proxy_request_buffering on` with `client_body_temp_path /tmp/nginx/client-body`,
+# so with an unlimited body size nginx would spool multi-GB uploads through the
+# ingress controller pod's ephemeral storage — a node-eviction risk.
+#
+# NOTE FOR WHOEVER TESTS A BIG UPLOAD: raise the Traefik readTimeout on the VPS
+# first (/opt/aegis/pangolin/config/traefik/traefik_config.yml, a file this repo
+# does not track) or the test will fail on the public path and look like an
+# SFTPGo bug.
+#
+# ---------------------------------------------------------------------------
+# ADMIN-NESS IS EXCLUSIVE OF FILE ACCESS. READ THIS BEFORE TOUCHING role_field.
+# ---------------------------------------------------------------------------
+# SFTPGo has no expression language for roles. internal/httpd/oidc.go:294-308
+# compares the role_field claim against the literal string "admin", so a `groups`
+# claim of ["drive_users","drive_admins"] makes nobody an admin. The mechanism
+# that does work is a PocketID GROUP custom claim `sftpgo_role = admin` on
+# drive_admins, consumed by `role_field: sftpgo_role` below.
+#
+# The sharp edge: oidc.go:732-753 REFUSES a WebClient login when the token is an
+# admin one, and refuses a WebAdmin login when it is not. There is no admin file
+# browser anywhere in SFTPGo. So an identity carrying sftpgo_role=admin CANNOT
+# use the file manager at all. If both primary users are put in drive_admins the
+# drive ends up with zero usable file-manager accounts. Escalated to ticket 16d;
+# nothing in this file needs to change either way, because SFTPGo never sees
+# PocketID group membership for admins.
+#
+# ---------------------------------------------------------------------------
+# WHAT IS DELIBERATELY *NOT* HERE
+# ---------------------------------------------------------------------------
+# No auth gate. Pangolin stays a plain reverse proxy and this Ingress carries no
+# auth-* annotation. SFTPGo registers its public share routes OUTSIDE the group
+# that installs the OIDC authenticator (internal/httpd/server.go:1605-1621), so
+# anonymous share links work by design — and any gate in front of the hostname
+# would break every one of them, which is the whole point of ticket 15 Q9.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sftpgo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # NOT oci:// — see the header.
+    repoURL: ghcr.io/sftpgo/helm-charts
+    chart: sftpgo
+    # OCI tag, no leading "v". Pulled and rendered locally at
+    # sha256:110fd51f708e48b5a187971d4ea76d837bca24172af155fd9fa37e1d80dfb6bf.
+    targetRevision: "0.47.0"
+    helm:
+      valuesObject:
+        replicaCount: 1
+
+        # Trap 1. Never remove this.
+        deploymentStrategy:
+          type: Recreate
+
+        image:
+          # The chart's appVersion is 2.7.4; this pins the patch release whose
+          # source every claim in tickets 16a/16c/16d was read against, so the
+          # citations and the running binary are the same artifact. Plain tag =
+          # the Debian variant = CGO on = sqlite available. Trap 2: never a
+          # "-distroless*" tag.
+          tag: "v2.7.5"
+          pullPolicy: IfNotPresent
+
+        # Browser file manager only (ticket 15 Q1). Setting sftpd.enabled false
+        # makes the chart emit SFTPGO_SFTPD__BINDINGS__0__PORT=0, the documented
+        # way to disable the listener.
+        sftpd:
+          enabled: false
+        ftpd:
+          enabled: false
+        webdavd:
+          enabled: false
+        httpd:
+          enabled: true
+          port: 8080
+
+        # SQLite on Ceph RWO, not Postgres. The pool is replicated x3 with
+        # failure domain "host" across the three Talos nodes, which makes this
+        # volume more durable than the user documents themselves (Garage runs
+        # replication_factor 1 on one machine). Postgres would add a second
+        # stateful workload with its own PVC on the same pool to serve four
+        # people, and would only buy a *shared* data provider — which ticket 15
+        # Q8 rules out by saying HA is explicitly not a goal.
+        persistence:
+          enabled: true
+          pvc:
+            accessModes:
+              - ReadWriteOnce
+            storageClassName: ceph-block
+            resources:
+              requests:
+                storage: 2Gi
+
+        podAnnotations:
+          # BUMP THIS whenever drive-loaddata-configmap.yaml changes. That
+          # ConfigMap is applied by Flux and the chart's own checksum/config
+          # annotation does not cover it, so without a bump the pod is not
+          # recreated, the loaddata file is not re-read, and the deploy is a
+          # silent no-op.
+          homeops.sharmamohit.com/loaddata-revision: "1"
+
+        # Memory is dominated by the multipart buffers: part_size x
+        # (concurrency + 1) per in-flight transfer, i.e. ~80 MiB up and ~30 MiB
+        # down at the settings in the loaddata ConfigMap.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+        # Renders the loaddata file with the real Garage credentials into an
+        # emptyDir. The ConfigMap keeps the authorisation design readable in git
+        # and holds no secret; the credential only ever exists in the Secret and
+        # in this pod's memory. SFTPGo does no environment substitution on the
+        # loaddata file (internal/service/service.go:334 is os.ReadFile then
+        # json.Unmarshal), which is why this step exists at all.
+        #
+        # The `grep -q` is the point of the whole container: if either
+        # placeholder survives, it exits non-zero and the pod never starts,
+        # instead of SFTPGo starting with a broken S3 secret and failing later
+        # with an opaque AccessDenied. Note the sed uses "|" as the delimiter, so
+        # a future access key containing "|", "&" or "\" would need this
+        # rewriting — Garage's are hex and "GK"+hex.
+        initContainers:
+          - name: render-loaddata
+            image: ghcr.io/drakkan/sftpgo:v2.7.5
+            imagePullPolicy: IfNotPresent
+            command:
+              - /bin/sh
+              - -ec
+              - |
+                sed -e "s|__S3_ACCESS_KEY__|${S3_ACCESS_KEY_ID}|g" \
+                    -e "s|__S3_SECRET_KEY__|${S3_SECRET_ACCESS_KEY}|g" \
+                    /etc/sftpgo-loaddata/loaddata.json > /run/sftpgo-init/loaddata.json
+                if grep -q '__S3_ACCESS_KEY__\|__S3_SECRET_KEY__' /run/sftpgo-init/loaddata.json; then
+                  echo "render-loaddata: placeholder substitution FAILED, refusing to start" >&2
+                  exit 1
+                fi
+                echo "render-loaddata: wrote $(wc -c < /run/sftpgo-init/loaddata.json) bytes"
+            env:
+              - name: S3_ACCESS_KEY_ID
+                valueFrom:
+                  secretKeyRef:
+                    name: drive-object-store-credentials
+                    key: access-key-id
+              - name: S3_SECRET_ACCESS_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: drive-object-store-credentials
+                    key: secret-access-key
+            volumeMounts:
+              - name: loaddata-src
+                mountPath: /etc/sftpgo-loaddata
+                readOnly: true
+              - name: loaddata
+                mountPath: /run/sftpgo-init
+
+        volumes:
+          - name: loaddata-src
+            configMap:
+              name: drive-loaddata
+          - name: loaddata
+            emptyDir: {}
+          - name: kms
+            secret:
+              secretName: drive-app
+              items:
+                - key: kms-master-key
+                  path: master.key
+
+        # Applied to the SFTPGo container only; the initContainer carries its own.
+        volumeMounts:
+          - name: loaddata
+            mountPath: /run/sftpgo-init
+            readOnly: true
+          - name: kms
+            mountPath: /run/sftpgo-kms
+            readOnly: true
+
+        envVars:
+          # The OIDC client id and secret are BOTH taken from the SOPS Secret so
+          # that drive-oidc-secret.yaml is the single source of truth — the id is
+          # caller-supplied and pinned in PocketID, not generated, so the two
+          # cannot drift. The secret must not go in `config:` below, which the
+          # chart renders verbatim into a plaintext ConfigMap
+          # (templates/configmap.yaml: `sftpgo.json: |- {{ toJson .Values.config }}`).
+          #
+          # These merge into, rather than replace, the oidc block from the config
+          # file: internal/config/config.go:1611-1614 seeds the struct from
+          # globalConf.HTTPDConfig.Bindings[idx].OIDC before applying env vars.
+          - name: SFTPGO_HTTPD__BINDINGS__0__OIDC__CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: drive-oidc
+                key: oauth-client-id
+          - name: SFTPGO_HTTPD__BINDINGS__0__OIDC__CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: drive-oidc
+                key: oauth-client-secret
+          # Closes the first-run admin-setup window. See drive-app-secret.yaml.
+          - name: SFTPGO_HTTPD__SETUP__INSTALLATION_CODE
+            valueFrom:
+              secretKeyRef:
+                name: drive-app
+                key: installation-code
+          # The declarative bootstrap. Must be an absolute path
+          # (service.go:317). Mode 0 = "existing objects are updated", so the
+          # design in git is re-asserted at every start; the file lists no users
+          # and no admins, so no runtime state is clobbered.
+          # SFTPGO_LOADDATA_CLEAN is deliberately unset: it makes SFTPGo delete
+          # the file after loading it (service.go:348).
+          - name: SFTPGO_LOADDATA_FROM
+            value: /run/sftpgo-init/loaddata.json
+          - name: SFTPGO_LOADDATA_MODE
+            value: "0"
+
+        ui:
+          ingress:
+            enabled: true
+            className: nginx
+            annotations:
+              # All four are load-bearing. proxy-body-size "0" removes the 1 MiB
+              # default; the two timeouts default to 60 s each, which would cut a
+              # slow upload even on the LAN where Traefik is not in the path.
+              nginx.ingress.kubernetes.io/proxy-body-size: "0"
+              nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+              nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+              nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+            hosts:
+              - host: drive.proxy.sharmamohit.com
+                paths:
+                  - path: /
+                    pathType: Prefix
+            # NOT default-tls-cert. That certificate is sharmamohit.com +
+            # *.sharmamohit.com — ONE label deep — and a wildcard does not span
+            # two labels, so it does not cover drive.proxy.sharmamohit.com.
+            # Measured, not assumed: `openssl s_client -connect 192.168.11.90:443
+            # -servername drive.proxy.sharmamohit.com` currently returns
+            # subject=CN=*.sharmamohit.com. Omitting this block silently falls
+            # back to that certificate and every LAN browser shows a name error.
+            # The Certificate is kubernetes/infrastructure/configs/drive-tls-cert.yaml.
+            #
+            # This block only serves the LAN half of the split horizon. The VPS
+            # edge does TLS passthrough for *.proxy.sharmamohit.com, so a public
+            # visitor is served Pangolin's own per-resource certificate and never
+            # sees this one. The two halves fail independently.
+            tls:
+              - secretName: drive-tls-cert
+                hosts:
+                  - drive.proxy.sharmamohit.com
+
+        # The REST API has no reason to be on a public hostname. The chart's
+        # api.ingress would only add a second Ingress; because the UI Ingress
+        # above is a "/" prefix, /api would still be reachable through it. So the
+        # API is turned off at the binding instead (see enable_rest_api below)
+        # and this stays disabled to avoid a second, contradictory Ingress.
+        api:
+          ingress:
+            enabled: false
+
+        # The chart hardcodes SFTPGO_TELEMETRY__BIND_PORT=10000 and the liveness
+        # and readiness probes hit /healthz there, so the metrics endpoint is
+        # already up. The operator's podMonitorSelector and
+        # podMonitorNamespaceSelector are both {} today (i.e. match everything);
+        # the release label is set anyway so this keeps working if they are ever
+        # narrowed.
+        podMonitor:
+          enabled: true
+          labels:
+            release: kube-prometheus-stack
+          interval: 1m
+          scrapeTimeout: 10s
+
+        # Rendered verbatim into a ConfigMap as /etc/sftpgo/sftpgo.json. It is a
+        # PARTIAL config — everything not named here keeps SFTPGo's own default.
+        # NOTHING SECRET MAY GO IN HERE.
+        config:
+          data_provider:
+            # Absolute, so it cannot drift with the working directory. The chart
+            # mounts the PVC at /var/lib/sftpgo.
+            driver: sqlite
+            name: /var/lib/sftpgo/sftpgo.db
+            backups_path: /var/lib/sftpgo/backups
+            # Only a fallback: the loaddata template sets home_dir explicitly.
+            # Without one of the two, dataprovider.validateBaseParams rejects the
+            # auto-provisioned user with "home_dir is mandatory", because the
+            # user record itself carries no filesystem config — the group does.
+            users_base_dir: /var/lib/sftpgo/users
+            # No app-local accounts (ticket 15 Q10). This is also SFTPGo's own
+            # default; stated explicitly because it matters.
+            create_default_admin: false
+          kms:
+            secrets:
+              # Without this, secrets in the data provider — including the Garage
+              # key inside the drive_users group — are encrypted with a key
+              # stored beside the ciphertext. That is obfuscation. With it, the
+              # SQLite file and any snapshot of it are useless on their own.
+              master_key_path: /run/sftpgo-kms/master.key
+          httpd:
+            # MUST stay empty. web_root moves the UI paths, and the OIDC redirect
+            # URI is built as path.Join(web_root, "/web/oidc/redirect"). Setting
+            # it would change the callback URL and break the PocketID client,
+            # which matches literally and without wildcards.
+            web_root: ""
+            # 5 GiB per file. Enforced via http.MaxBytesReader at
+            # internal/httpd/api_http_user.go:258 and api_shares.go:346, so the
+            # user gets an application-level refusal instead of a severed
+            # connection. SFTPGo's own default is 0 = unlimited (config.go:416),
+            # despite a package variable elsewhere that looks like 1000 MB.
+            # Reachable in full only from the LAN until the VPS Traefik
+            # readTimeout is raised — see the header.
+            max_upload_file_size: 5368709120
+            setup:
+              installation_code_hint: "Installation code (SOPS: kubernetes/infrastructure/configs/drive-app-secret.yaml)"
+            bindings:
+              - port: 8080
+                address: ""
+                enable_web_admin: true
+                enable_web_client: true
+                # Off. No template in SFTPGo's web UI calls /api/v2 (grepped at
+                # v2.7.5), so nothing in the browser needs it, and the "/" Ingress
+                # above would otherwise expose it on the public hostname. Every
+                # identity here is passwordless-OIDC so the API would be
+                # unusable anyway. Flip to true if automation ever needs it.
+                enable_rest_api: false
+                # 8 = disable the WebClient login FORM, so users can only arrive
+                # through PocketID (ticket 15 Q10). The WebAdmin form is left
+                # enabled deliberately: bit 4 would add it, and with both forms
+                # off a PocketID outage locks everyone out of a service that
+                # holds the only copy of the household's documents. The setup
+                # page is closed by the installation code instead.
+                disabled_login_methods: 8
+                # 0 = use the header settings below rather than the PROXY
+                # protocol listener. Without these the defender and share
+                # allow_from rules would see the ingress-nginx pod IP for every
+                # request. Trusting the whole pod CIDR is right because the only
+                # thing that can reach this Service is another pod.
+                proxy_mode: 0
+                proxy_allowed:
+                  - 10.244.0.0/16
+                client_ip_proxy_header: X-Forwarded-For
+                client_ip_header_depth: 0
+                oidc:
+                  # client_id and client_secret come from the Secret via env.
+                  # config_url is the ISSUER, not the discovery document:
+                  # go-oidc appends /.well-known/openid-configuration itself, and
+                  # SFTPGo refuses to start if it cannot reach it.
+                  config_url: https://pocketid.proxy.sharmamohit.com
+                  # SFTPGo does not let you set the redirect URI; it appends
+                  # /web/oidc/redirect to this base. With web_root empty the
+                  # registered callback is therefore exactly
+                  # https://drive.proxy.sharmamohit.com/web/oidc/redirect
+                  # — no trailing slash, no wildcard. One URI serves both the
+                  # WebClient and the WebAdmin.
+                  redirect_base_url: https://drive.proxy.sharmamohit.com
+                  # openid is mandatory; profile carries preferred_username AND
+                  # PocketID's custom claims; groups carries membership; email is
+                  # requested for completeness.
+                  scopes:
+                    - openid
+                    - profile
+                    - email
+                    - groups
+                  # NOT "sub" — that is a UUID and would become the S3 key prefix
+                  # under users/%username%/, destroying the readable layout that
+                  # ticket 15 Q6 exists to protect. Not "email" either: an
+                  # address change would orphan the prefix.
+                  username_field: preferred_username
+                  # See the admin note in the header. The value compared against
+                  # is the literal string "admin".
+                  role_field: sftpgo_role
+                  implicit_roles: false
+                  # Makes the claim available to the account-check template as
+                  # {{.IDPFieldgroups}}. Not used by the current template; kept
+                  # because it is the only way to see the claim when debugging a
+                  # login.
+                  custom_fields:
+                    - groups
+                  debug: false
+  destination:
+    server: https://kubernetes.default.svc
+    # The Namespace object itself is declared by drive-tls-cert.yaml and applied
+    # by Flux with the rest of infrastructure/configs, which the apps
+    # Kustomization depends on. CreateNamespace below is a harmless no-op.
+    namespace: sftpgo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - SkipDryRunOnMissingResource=true

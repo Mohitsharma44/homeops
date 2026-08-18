@@ -1,0 +1,237 @@
+# The drive's declarative authorisation design — ticket 16c.
+#
+# SFTPGo has a first-class declarative bootstrap: `sftpgo serve --loaddata-from`
+# (env SFTPGO_LOADDATA_FROM), which reads a "dumpdata"-shaped JSON file at every
+# start and replays it into the data provider. internal/cmd/root.go:149-185
+# defines the three flags; internal/service/service.go:314-359 reads the file and
+# calls dataprovider.ParseDumpData, then restores folders -> groups -> users ->
+# admins -> ... -> event_actions -> event_rules in that order.
+#
+# WHY THIS FILE EXISTS AT ALL
+# ---------------------------
+# It makes who-can-do-what a reviewable diff instead of clicks in a web UI. The
+# SQLite database on the Ceph PVC then holds only per-user RUNTIME state — share
+# links, quota counters, last-login — and nothing that a person decided.
+#
+# WHAT IS DELIBERATELY ABSENT: `users` AND `admins`
+# -------------------------------------------------
+# The restore mode is GLOBAL, not per-section (internal/httpd/api_maintenance.go:
+# mode 1 skips anything that already exists, mode 0 updates it). We run
+# SFTPGO_LOADDATA_MODE=0 so that the design below is re-asserted at every pod
+# start. If user rows were listed here, mode 0 would clobber them on every
+# restart. They are not: user and admin rows are created and maintained entirely
+# by the IDP account-check rule below, from the PocketID token. Git owns the
+# design; PocketID owns the people.
+#
+# SFTPGO_LOADDATA_CLEAN must stay unset. It makes SFTPGo os.Remove the file after
+# a successful load (service.go:348), which is wrong for a mounted volume.
+# The file must also stay under httpd.MaxRestoreSize = 20 MiB; it is ~3.5 KB.
+#
+# THE TWO PLACEHOLDERS ARE NOT A TYPO
+# -----------------------------------
+# `__S3_ACCESS_KEY__` and `__S3_SECRET_KEY__` are substituted at pod start by the
+# `render-loaddata` initContainer in
+# kubernetes/apps/argocd-apps/apps/sftpgo.yaml, which reads the real values from
+# the `drive-object-store-credentials` Secret and writes the rendered file to an
+# emptyDir. It exits non-zero if either placeholder survives, so a failed
+# substitution stops the pod instead of starting SFTPGo with a broken S3 secret.
+#
+# The file gets NO environment substitution from SFTPGo itself: service.go:334
+# is os.ReadFile followed by json.Unmarshal, nothing more. That is why an
+# initContainer is needed rather than a `${VAR}` reference. Keeping the
+# credential out of this ConfigMap is the point: a ConfigMap is plaintext, and
+# this one is meant to be read in review.
+#
+# `access_secret` is written with `{"status": "Plain", ...}` because that is the
+# kms.BaseSecret wire form for an unencrypted value (sftpgo/sdk v0.1.9
+# kms/kms.go, SecretStatusPlain = "Plain"). SFTPGo re-encrypts it with its own
+# KMS on first save -- verified locally: after Filesystem.Validate the status
+# becomes "Secretbox".
+#
+# THE ONE-LINE ISOLATION MECHANISM
+# --------------------------------
+# `key_prefix: "users/%username%/"` on the primary group. %username% is
+# substituted per user by internal/dataprovider/user.go:1592 and applied to the
+# S3 key prefix by replaceFsConfigPlaceholders (user.go:1602-1616). Every path
+# then goes through internal/vfs/s3fs.go:637-645 ResolvePath, which
+# unconditionally prepends the prefix after path.Clean("/"+virtualPath) -- so
+# "../" cannot escape it -- and s3fs.go:574-578 refuses any listed key that does
+# not carry the prefix. Isolation is enforced in the filesystem layer, below
+# every protocol, from a record the end user cannot edit. It is not a UI filter.
+#
+# It is also the reason the bucket stays self-describing (ticket 15 Q6): the S3
+# key is literally key_prefix + the path the user sees. Upload
+# "Holiday/2019/IMG_0042.jpg" as mohit and the object is at
+# `users/mohit/Holiday/2019/IMG_0042.jpg`, readable with `aws s3 ls` and no
+# application involved.
+#
+# QUOTAS — THE ARITHMETIC, SO THE NEXT PERSON DOES NOT HAVE TO REDERIVE IT
+# ------------------------------------------------------------------------
+# Garage enforces 2 TiB = 2199023255552 B on the bucket, server-side (16b, proved
+# by a refused PUT). That is the safety mechanism which protects Frigate's share
+# of /volume1. The numbers below only DIVIDE that space between people:
+#
+#   4 accounts x 400 GiB   = 1600 GiB   (user, partner, parents, in-laws -- 16d)
+#   /Shared                =  400 GiB
+#                            --------
+#                            2000 GiB   against a 2048 GiB ceiling
+#
+# 400 GiB = 429496729600 B. ADDING A FIFTH ACCOUNT MEANS LOWERING quota_size, or
+# the app-level quotas oversubscribe the bucket and users hit Garage's refusal
+# instead of a clean SFTPGo message.
+#
+# THE ACCOUNT-CHECK RULE
+# ----------------------
+# `type: 13` is ActionTypeIDPAccountCheck and `trigger: 7` is
+# EventTriggerIDPLogin (internal/dataprovider/eventrule.go:39-53 and 106-113 --
+# both confirmed by running the enum lookup against the v2.7.5 source, not by
+# counting the iota by eye). `conditions` is empty, so idp_login_event is 0 =
+# any, and the one rule serves both the "IDP login user" and "IDP login admin"
+# events; which template is used is chosen by the event
+# (internal/common/eventmanager.go:2716-2720).
+#
+# `execute_sync: true` is MANDATORY, not a preference. eventmanager.go:453 returns
+# (nil, nil, nil) when no rule with a sync action matches, and
+# eventrule.go:1835-1846 rejects the rule outright with "IDP account check must
+# be a sync action". Without it, no account is ever created and every OIDC login
+# fails with an opaque error.
+#
+# `mode: 0` (create or update) rather than 1 (create only if missing) so that
+# group membership stays authoritative. It is safe for runtime state: the UPDATE
+# statement (internal/dataprovider/sqlqueries.go:721 getUpdateUserQuery) does not
+# touch used_quota_size or used_quota_files, and shares live in their own table.
+#
+# NO `drive_admins` SFTPGo GROUP EXISTS, ON PURPOSE. SFTPGo groups configure
+# USERS. Admin-ness comes from the `sftpgo_role` claim, compared against the
+# literal string "admin" at internal/httpd/oidc.go:294-308. See the header of
+# kubernetes/apps/argocd-apps/apps/sftpgo.yaml for the consequence, which is
+# sharp and which ticket 16d needs to act on.
+#
+# CHANGING THIS FILE DOES NOT RESTART THE POD.
+# It is applied by Flux; the chart's `checksum/config` annotation covers only the
+# chart's own ConfigMap. Bump `podAnnotations.homeops.sharmamohit.com/loaddata-revision`
+# in sftpgo.yaml in the same commit, or the running pod keeps the old design and
+# the deploy is a silent no-op.
+#
+# Verified before commit by running SFTPGo v2.7.5's own parser and validators
+# over the exact bytes below (`dataprovider.ParseDumpData`,
+# `dataprovider.ValidateUser`, `EventRule.CheckActionsConsistency`,
+# `vfs.Filesystem.Validate`). Output is quoted in 16c-author-manifests.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: drive-loaddata
+  namespace: sftpgo
+data:
+  loaddata.json: |
+    {
+      "version": 17,
+      "folders": [
+        {
+          "name": "shared",
+          "description": "Shared family folder. Objects land under the bucket prefix shared/.",
+          "filesystem": {
+            "provider": 1,
+            "s3config": {
+              "bucket": "drive-files",
+              "region": "garage",
+              "endpoint": "http://objects.sharmamohit.com:3900",
+              "force_path_style": true,
+              "upload_part_size": 16,
+              "upload_concurrency": 4,
+              "access_key": "__S3_ACCESS_KEY__",
+              "key_prefix": "shared/",
+              "access_secret": {
+                "status": "Plain",
+                "payload": "__S3_SECRET_KEY__"
+              }
+            }
+          }
+        }
+      ],
+      "groups": [
+        {
+          "name": "drive_users",
+          "description": "Everyone who may use the drive. Primary group: it supplies the S3 filesystem, the per-user key prefix and the quota.",
+          "user_settings": {
+            "home_dir": "/var/lib/sftpgo/users/%username%",
+            "quota_size": 429496729600,
+            "quota_files": 0,
+            "permissions": {
+              "/": [
+                "*"
+              ]
+            },
+            "filters": {
+              "web_client": [
+                "password-change-disabled",
+                "password-reset-disabled",
+                "publickey-change-disabled",
+                "api-key-auth-change-disabled",
+                "mfa-disabled",
+                "shares-without-password-disabled"
+              ]
+            },
+            "filesystem": {
+              "provider": 1,
+              "s3config": {
+                "bucket": "drive-files",
+                "region": "garage",
+                "endpoint": "http://objects.sharmamohit.com:3900",
+                "force_path_style": true,
+                "upload_part_size": 16,
+                "upload_concurrency": 4,
+                "access_key": "__S3_ACCESS_KEY__",
+                "key_prefix": "users/%username%/",
+                "access_secret": {
+                  "status": "Plain",
+                  "payload": "__S3_SECRET_KEY__"
+                }
+              }
+            }
+          },
+          "virtual_folders": [
+            {
+              "name": "shared",
+              "virtual_path": "/Shared",
+              "quota_size": 429496729600,
+              "quota_files": 0
+            }
+          ]
+        }
+      ],
+      "event_actions": [
+        {
+          "name": "drive_idp_account_check",
+          "description": "Create or update the SFTPGo account from the PocketID token at every OIDC login.",
+          "type": 13,
+          "options": {
+            "idp_config": {
+              "mode": 0,
+              "template_user": "{\"username\": \"{{.Name}}\", \"status\": 1, \"home_dir\": \"/var/lib/sftpgo/users/{{.Name}}\", \"permissions\": {\"/\": [\"*\"]}, \"groups\": [{\"name\": \"drive_users\", \"type\": 1}], \"description\": \"Auto-provisioned from PocketID at first OIDC login (ticket 16).\"}",
+              "template_admin": "{\"username\": \"{{.Name}}\", \"status\": 1, \"permissions\": [\"*\"], \"description\": \"Auto-provisioned from PocketID at first OIDC login; the sftpgo_role claim was 'admin'.\"}"
+            }
+          }
+        }
+      ],
+      "event_rules": [
+        {
+          "name": "drive_idp_login",
+          "status": 1,
+          "description": "Runs the account check for both IDP login kinds (idp_login_event 0 = any).",
+          "trigger": 7,
+          "conditions": {},
+          "actions": [
+            {
+              "name": "drive_idp_account_check",
+              "order": 1,
+              "relation_options": {
+                "is_failure_action": false,
+                "stop_on_failure": true,
+                "execute_sync": true
+              }
+            }
+          ]
+        }
+      ]
+    }

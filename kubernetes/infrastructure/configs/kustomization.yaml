@@ -21,8 +21,24 @@ resources:
   - newt-credentials-secret.yaml
   - kaneo-ns.yaml
   - kaneo-secret.yaml
-  # Self-hosted drive (SFTPGo) — ticket 16e. Declares the `sftpgo` namespace and
-  # the TLS certificate for drive.proxy.sharmamohit.com. A separate certificate is
-  # required because default-tls-cert above is one label deep and does not cover a
-  # two-label-deep name. Read the header of the file before changing it.
+  # Self-hosted drive (SFTPGo) — ticket 16. Order matters only for the first
+  # entry: drive-tls-cert.yaml is the file that DECLARES the `sftpgo` Namespace,
+  # so it must stay above the four objects that live in it. Do not add a second
+  # Namespace manifest — a duplicate in one kustomization is a build error.
+  #
+  # A separate certificate is required because default-tls-cert above is
+  # sharmamohit.com + *.sharmamohit.com, one label deep, and a wildcard does not
+  # span two labels. Read each file's header before changing it.
   - drive-tls-cert.yaml
+  # Garage bucket key, scoped read+write to drive-files only (16b).
+  - drive-object-store-credentials.yaml
+  # PocketID client id + secret (16d). The client id is pinned rather than
+  # generated, so this can be applied before the PocketID client exists; until
+  # it does, OIDC login fails while everything else runs.
+  - drive-oidc-secret.yaml
+  # KMS master key + first-run installation code (16c).
+  - drive-app-secret.yaml
+  # The declarative authorisation design replayed at every pod start (16c).
+  # Changing it does NOT restart the pod on its own — bump
+  # podAnnotations loaddata-revision in the sftpgo Application in the same commit.
+  - drive-loaddata-configmap.yaml
