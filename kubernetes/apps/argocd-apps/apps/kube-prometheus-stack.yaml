@@ -236,15 +236,36 @@ spec:
                   group_interval: 10m
                   repeat_interval: 6h
                   routes:
+                    # "The monitoring is broken" -- ONE message, not nineteen.
+                    # execErrState: Error makes every rule emit DatasourceError
+                    # instead of impersonating an infrastructure failure, and
+                    # noDataState: NoData emits DatasourceNoData. Without this
+                    # route a single Thanos hiccup would fan out to one Slack
+                    # thread per rule. Must stay FIRST and continue:false.
+                    - receiver: slack-homelab
+                      object_matchers:
+                        - ["alertname", "=~", "DatasourceError|DatasourceNoData|DatasourceTimeout"]
+                      group_by:
+                        - alertname
+                      group_wait: 5m
+                      group_interval: 30m
+                      repeat_interval: 12h
+                      continue: false
                     - receiver: slack-homelab
                       object_matchers:
                         - ["severity", "=", "none"]
                       group_wait: 8760h
                       repeat_interval: 8760h
                       continue: false
+                    # group_by is deliberately JUST instance. Grouping is a
+                    # partition, so MORE labels means MORE Slack threads, not
+                    # fewer: with [alertname, instance] the 2026-08-19 outage
+                    # opened 13 separate threads for one dead host. Keyed on
+                    # instance alone, everything wrong with a given host arrives
+                    # as a single message. The trade-off, accepted knowingly: two
+                    # unrelated problems on the same host share one thread.
                     - receiver: slack-homelab
                       group_by:
-                        - alertname
                         - instance
                       object_matchers:
                         - ["severity", "=~", "critical|warning"]
@@ -252,10 +273,16 @@ spec:
                       group_interval: 10m
                       repeat_interval: 6h
                       routes:
+                        # Was 1h. Combined with 13 threads that is what turned one
+                        # host power-off into ~78 Slack messages. A critical alert
+                        # nobody has acted on in 6h is not made truer by asking
+                        # hourly.
                         - receiver: slack-homelab
+                          group_by:
+                            - instance
                           object_matchers:
                             - ["severity", "=", "critical"]
-                          repeat_interval: 1h
+                          repeat_interval: 6h
             rules.yaml:
               apiVersion: 1
               # Grafana's alert-rule file provisioning ADDS and UPDATES only --
@@ -590,7 +617,7 @@ spec:
                             refId: C
                       for: 5m
                       noDataState: NoData
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -806,7 +833,7 @@ spec:
                             refId: C
                       for: 5m
                       noDataState: NoData
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -937,8 +964,17 @@ spec:
                                   params: [108000]
                             refId: C
                       for: 15m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -974,8 +1010,15 @@ spec:
                                   params: [1]
                             refId: C
                       for: 15m
+                      # LOAD-BEARING -- do NOT change to KeepLast. This rule is
+                      # `up{job=...} < 1`, which has the same defect the old
+                      # InfraHostDown had: when the exporter dies the series
+                      # DISAPPEARS rather than going to 0, so the threshold can
+                      # never trip. noDataState: Alerting IS the detection
+                      # mechanism here. (Better long-term: rewrite as a staleness
+                      # test the way InfraHostDown now is.)
                       noDataState: Alerting
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1033,8 +1076,15 @@ spec:
                                   params: [1]
                             refId: C
                       for: 15m
+                      # LOAD-BEARING -- do NOT change to KeepLast. This rule is
+                      # `up{job=...} < 1`, which has the same defect the old
+                      # InfraHostDown had: when the exporter dies the series
+                      # DISAPPEARS rather than going to 0, so the threshold can
+                      # never trip. noDataState: Alerting IS the detection
+                      # mechanism here. (Better long-term: rewrite as a staleness
+                      # test the way InfraHostDown now is.)
                       noDataState: Alerting
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1073,8 +1123,17 @@ spec:
                                   params: [1]
                             refId: C
                       for: 5m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1127,8 +1186,17 @@ spec:
                                   params: [5]
                             refId: C
                       for: 15m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1171,8 +1239,17 @@ spec:
                                   params: [4]
                             refId: C
                       for: 15m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1278,7 +1355,7 @@ spec:
                             refId: C
                       for: 15m
                       noDataState: NoData
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1319,7 +1396,7 @@ spec:
                             refId: C
                       for: 30m
                       noDataState: NoData
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1360,7 +1437,7 @@ spec:
                             refId: C
                       for: 30m
                       noDataState: NoData
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1401,8 +1478,17 @@ spec:
                                   params: [43200]
                             refId: C
                       for: 15m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1438,8 +1524,15 @@ spec:
                                   params: [1]
                             refId: C
                       for: 15m
+                      # LOAD-BEARING -- do NOT change to KeepLast. This rule is
+                      # `up{job=...} < 1`, which has the same defect the old
+                      # InfraHostDown had: when the exporter dies the series
+                      # DISAPPEARS rather than going to 0, so the threshold can
+                      # never trip. noDataState: Alerting IS the detection
+                      # mechanism here. (Better long-term: rewrite as a staleness
+                      # test the way InfraHostDown now is.)
                       noDataState: Alerting
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1480,8 +1573,17 @@ spec:
                                   params: [1]
                             refId: C
                       for: 30m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1544,8 +1646,17 @@ spec:
                                   params: [0]
                             refId: C
                       for: 5m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1581,8 +1692,17 @@ spec:
                                   params: [0]
                             refId: C
                       for: 5m
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: critical
                       annotations:
@@ -1635,8 +1755,17 @@ spec:
                                   params: [3456000]
                             refId: C
                       for: 1h
-                      noDataState: Alerting
-                      execErrState: Alerting
+                      # KeepLast, not Alerting. These metrics come from the
+                      # storage host; when it powered off on 2026-08-19 the series
+                      # vanished and this rule fired on NoData with a message that
+                      # was FLATLY UNTRUE (nothing had lost a bucket / a disk / a
+                      # backup). Twelve rules did that at once -- ~78 Slack messages
+                      # for one host, none of them correct, while InfraHostDown, the
+                      # one rule that should have fired, stayed green. NoData here
+                      # means "cannot tell", not "the bad thing happened", so hold
+                      # the last known state and let InfraHostDown report the host.
+                      noDataState: KeepLast
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1686,7 +1815,7 @@ spec:
                       # between scrubs. Alerting on NoData would fire
                       # continuously for exactly that reason.
                       noDataState: OK
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
@@ -1722,8 +1851,15 @@ spec:
                                   params: [1]
                             refId: C
                       for: 15m
+                      # LOAD-BEARING -- do NOT change to KeepLast. This rule is
+                      # `up{job=...} < 1`, which has the same defect the old
+                      # InfraHostDown had: when the exporter dies the series
+                      # DISAPPEARS rather than going to 0, so the threshold can
+                      # never trip. noDataState: Alerting IS the detection
+                      # mechanism here. (Better long-term: rewrite as a staleness
+                      # test the way InfraHostDown now is.)
                       noDataState: Alerting
-                      execErrState: Alerting
+                      execErrState: Error
                       labels:
                         severity: warning
                       annotations:
