@@ -289,6 +289,40 @@ spec:
                   folder: Infra Node Health
                   interval: 60s
                   rules:
+                    # STALENESS TEST, NOT A VALUE TEST. See ticket 20.
+                    #
+                    # The old expression was `up{...}` reduced to `last` with a
+                    # `lt 1` threshold. It CANNOT detect a host going down. Every
+                    # host reports its own liveness through its own Alloy, which
+                    # remote_writes here; when the host dies its Alloy dies with
+                    # it, so the series DISAPPEARS rather than going to 0. The
+                    # surviving hosts keep the query non-empty so NoData never
+                    # trips either, and the rule evaluates the survivors, sees
+                    # all 1, and stays green. It was inactive throughout the
+                    # 6h37m outage on 2026-08-19.
+                    #
+                    # `max_over_time(timestamp(up{...})[24h:1m])` is the time of
+                    # the most recent sample; `time() - that` is how long the host
+                    # has been silent. The 24h window is what keeps the SERIES
+                    # present after the samples stop -- that is the whole trick.
+                    # Consequence: a host down longer than 24h drops out and the
+                    # alert self-resolves. That is accepted; 24h is far past the
+                    # point of noticing.
+                    #
+                    # Threshold 300s is sized against measured behaviour, not
+                    # guessed: remote_write interval is 60s on all six hosts
+                    # (count_over_time(up[30m]) == 30, uniformly), and the 1m
+                    # subquery step adds up to another 60s of quantisation, so a
+                    # HEALTHY host reads up to ~125s. Observed healthy maxima:
+                    # 103s, 112s, 122s. 300s is ~2.4x that ceiling.
+                    #
+                    # Do NOT coarsen the subquery to [24h:5m] to save cycles: the
+                    # quantisation error grows with the step and healthy hosts
+                    # start reading ~300s, which false-positives this rule.
+                    #
+                    # Replayed against the real outage window, storage reads 27s
+                    # before 15:32, 1647s at the first step after, climbing to
+                    # 23247s, and back to 26s the moment WoL revived it.
                     - uid: infra-host-down
                       title: InfraHostDown
                       condition: C
@@ -299,7 +333,19 @@ spec:
                             to: 0
                           datasourceUid: thanos
                           model:
-                            expr: 'up{job="integrations/unix",source="infra"}'
+                            expr: 'time() - max_over_time(timestamp(up{job="integrations/unix",source="infra"})[24h:1m])'
+                            # MUST stay an instant query. If Grafana ran this as a
+                            # RANGE query over relativeTimeRange, EVERY step would
+                            # re-evaluate a 24h/1m subquery (1440 points x 6 series)
+                            # and the evaluation would be slow enough to risk
+                            # execErrState. range:false and maxDataPoints:1 are
+                            # belt-and-braces in case `instant` is ignored by a
+                            # future schema version -- the reduce below still picks
+                            # the last point either way, so the result is correct
+                            # regardless; this only bounds the cost.
+                            instant: true
+                            range: false
+                            maxDataPoints: 1
                             refId: A
                         - refId: B
                           datasourceUid: __expr__
@@ -315,16 +361,19 @@ spec:
                             expression: B
                             conditions:
                               - evaluator:
-                                  type: lt
-                                  params: [1]
+                                  type: gt
+                                  params: [300]
                             refId: C
-                      for: 5m
+                      for: 2m
+                      # Deliberate: if this query goes empty, every infra host has
+                      # been silent for 24h or Thanos is broken. Both are worth
+                      # waking up for.
                       noDataState: NoData
                       execErrState: Error
                       labels:
                         severity: critical
                       annotations:
-                        summary: 'Host {{ "{{" }} $labels.instance {{ "}}" }} is unreachable'
+                        summary: 'Host {{ "{{" }} $labels.instance {{ "}}" }} has stopped reporting -- no metrics received for over 5 minutes (host down, or its Alloy died)'
                     - uid: fs-space-low
                       title: FilesystemSpaceLow
                       condition: C
@@ -1766,13 +1815,22 @@ spec:
             groups:
               - name: infra-node-health
                 rules:
+                  # Same staleness fix as the Grafana-provisioned copy above --
+                  # see the long comment there for why `up{...} == 0` cannot work.
+                  #
+                  # NOTE: this copy currently notifies NOTHING. The Alertmanager
+                  # config in this file routes to `receiver: "null"` and defines no
+                  # other receiver, so Prometheus-side alerts are evaluated and
+                  # discarded. Grafana alerting -> slack-homelab is the live path.
+                  # Kept correct so it does the right thing if Alertmanager is ever
+                  # wired up, rather than sitting here looking like coverage.
                   - alert: InfraHostDown
-                    expr: up{job="integrations/unix", source="infra"} == 0
-                    for: 5m
+                    expr: time() - max_over_time(timestamp(up{job="integrations/unix", source="infra"})[24h:1m]) > 300
+                    for: 2m
                     labels:
                       severity: critical
                     annotations:
-                      summary: "Host {{ $labels.instance }} is unreachable"
+                      summary: "Host {{ $labels.instance }} has stopped reporting - no metrics received for over 5 minutes"
                   - alert: FilesystemSpaceLow
                     expr: |
                       (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",source="infra"}
