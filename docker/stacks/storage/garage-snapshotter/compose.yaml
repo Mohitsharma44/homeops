@@ -18,7 +18,7 @@
 
 services:
   garage-snapshotter:
-    image: alpine:3.21
+    image: alpine:3.24
     container_name: garage-snapshotter
     network_mode: host
     restart: unless-stopped
