@@ -13,7 +13,7 @@
 
 services:
   md-exporter:
-    image: alpine:3.21
+    image: alpine:3.24
     container_name: md-exporter
     network_mode: host
     restart: unless-stopped
