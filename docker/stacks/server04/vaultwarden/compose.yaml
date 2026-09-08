@@ -1,6 +1,6 @@
 services:
   vaultwarden:
-    image: vaultwarden/server:1.37.1
+    image: vaultwarden/server:1.37.2
     container_name: vaultwarden
     restart: always
     security_opt:
@@ -33,7 +33,7 @@ services:
         max-file: "3"
 
   backup:
-    image: alpine:3.21
+    image: alpine:3.24
     container_name: vaultwarden-backup
     restart: unless-stopped
     dns:
