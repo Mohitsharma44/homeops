@@ -1,9 +1,10 @@
 services:
   pangolin-cli:
-    image: fosrl/cli:0.8.0
+    image: fosrl/cli:0.16.0
     container_name: pangolin-client-obs
     restart: unless-stopped
     network_mode: host
+    command: ["--upstream-dns=1.1.1.1", "--netstack-dns=1.1.1.1"]
     cap_add:
       - NET_ADMIN
     devices:
