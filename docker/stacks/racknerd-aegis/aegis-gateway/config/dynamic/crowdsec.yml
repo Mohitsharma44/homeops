@@ -15,6 +15,10 @@ http:
           # Decisions cached locally, updated every 60s
           crowdsecMode: stream
           updateIntervalSeconds: 60
+          # Default (0) blocks all traffic on the first LAPI failure. -1 = never block on a
+          # LAPI hiccup; hold last-known-good decisions instead. Paired with cold-restore-first
+          # rollback for CrowdSec upgrades (Wave 5).
+          updateMaxFailure: -1
           # Trust internal Docker networks and Pangolin WireGuard for X-Forwarded-For
           forwardedHeadersTrustedIPs:
             - 10.0.0.0/8
