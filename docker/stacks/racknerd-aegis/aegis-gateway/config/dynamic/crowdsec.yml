@@ -19,6 +19,11 @@ http:
           # LAPI hiccup; hold last-known-good decisions instead. Paired with cold-restore-first
           # rollback for CrowdSec upgrades (Wave 5).
           updateMaxFailure: -1
+          # Full startup stream is ~39.5 MB / ~11 s (measured 2026-09-13); the 10 s default never
+          # completes it. Stream keys bind at container start only: restart after changing them.
+          httpTimeoutSeconds: 60
+          # Fetch the startup stream in the background so a restart does not wait on it.
+          streamStartupBlock: false
           # Trust internal Docker networks and Pangolin WireGuard for X-Forwarded-For
           forwardedHeadersTrustedIPs:
             - 10.0.0.0/8

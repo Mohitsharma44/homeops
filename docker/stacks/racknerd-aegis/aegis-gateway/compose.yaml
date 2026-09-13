@@ -62,7 +62,7 @@ services:
       - --accesslog.filepath=/var/log/traefik/access.log
       - --accesslog.format=json
       - --experimental.plugins.crowdsec-bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
-      - --experimental.plugins.crowdsec-bouncer.version=v1.6.0
+      - --experimental.plugins.crowdsec-bouncer.version=v1.7.1
     ports:
       - "80:80"
       - "443:443"
