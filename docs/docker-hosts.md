@@ -139,7 +139,8 @@ Runs Siderolabs Omni for managing Talos Linux Kubernetes clusters.
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
-**Original compose**: `/opt/omni/compose.yaml` (now managed via Komodo)
+**Compose**: managed via Komodo (`docker/stacks/omni/omni/compose.yaml`). `/opt/omni` is the data dir only (etcd, `omni.asc`, tls) — the pre-Komodo compose/env files were removed 2026-11-20.
+**TLS**: host-side certbot (Route53 DNS-01, `certbot.timer`). Omni reads its cert only at startup, so the deploy hook `/etc/letsencrypt/renewal-hooks/deploy/restart-omni.sh` runs `docker restart omni`.
 **Network**: Uses host network mode — required for Talos machine discovery
 
 ---
