@@ -68,6 +68,21 @@ landed_ok() {
   esac
   safe_name "$(basename "$host_d")" && safe_name "$(basename "$svc_d")" && safe_name "$(basename "$f")"
 }
+# landed_ok checks a PATH, and the sender can rename or replace a path at any
+# time -- e.g. swap its service dir for a symlink to /archive between the
+# check and the `rm`, so the rm deletes the copy just promoted. So pin the
+# directory: cd -P into it, confirm the physical cwd is under LANDING, and
+# from then on touch only ./<basename>. The cwd holds the directory INODE;
+# renames of its path cannot redirect us, and rm/mv never follow a symlink
+# in the final component.
+pin_dir() {
+  cd / && cd -P "${LANDING}/$1" 2>/dev/null || return 1
+  case "$(pwd -P)" in
+    "${LANDING}"/*/*) return 0 ;;
+  esac
+  cd /
+  return 1
+}
 
 # Walk every <host>/<service>/ pair under the landing share, so adding Omni or
 # Komodo's database later needs no change here -- just a new sender.
@@ -82,6 +97,12 @@ for src in "${LANDING}"/*/*/*.sqlite3; do
   rel=${src#"${LANDING}/"}          # server04/vaultwarden/vaultwarden_x.sqlite3
   dir=$(dirname "$rel")             # server04/vaultwarden
   base=$(basename "$rel")           # vaultwarden_x.sqlite3
+  if ! pin_dir "$dir"; then
+    err "could not pin landing dir, ignored: ${rel}"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+  src="./${base}"
 
   mkdir -p "${ARCHIVE}/${dir}"
   staged="${ARCHIVE}/${dir}/.incoming-${base}"
@@ -113,6 +134,8 @@ for src in "${LANDING}"/*/*/*.sqlite3; do
   fi
 done
 
+cd /
+
 # Snapshots: trust nothing until the archived COPY matches the sender's sha256.
 for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
   [ -e "$sidecar" ] || [ -L "$sidecar" ] || continue
@@ -125,8 +148,15 @@ for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
   rel=${src#"${LANDING}/"}          # omni/omni-etcd/<uuid>_<name>.snapshot
   dir=$(dirname "$rel")
   base=$(basename "$rel")
+  if ! pin_dir "$dir"; then
+    err "could not pin landing dir, ignored: ${rel}"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+  src="./${base}"
+  sidecar="./${base}.sha256"
 
-  if [ ! -f "$src" ] || [ -L "$src" ] || ! landed_ok "$src"; then
+  if [ ! -f "$src" ] || [ -L "$src" ] || [ -L "$sidecar" ]; then
     err "sidecar without a plain snapshot beside it, leaving it for the sender to retry: ${rel}.sha256"
     FAILED=$((FAILED + 1))
     continue
@@ -178,6 +208,8 @@ for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
     err "sha256 MISMATCH for ${rel}: expected ${expected:-<empty>}, got ${actual}; quarantined, NOT archived"
   fi
 done
+
+cd /
 
 # ---------------------------------------------------------------------------
 # Retention, for PRUNE_DIRS only. mtime is the verifier's promotion time (see
