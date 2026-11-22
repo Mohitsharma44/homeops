@@ -10,12 +10,25 @@ spec:
   source:
     repoURL: https://charts.fossorial.io
     chart: newt
-    targetRevision: "1.1.0"
+    targetRevision: "1.6.0"
     helm:
       valuesObject:
         global:
           image:
-            tag: "1.10.1"
+            tag: "1.20.1"
+          # Chart >=1.2 turns probes off and sets no resources by default;
+          # keep the 1.1.0 behaviour explicitly (no CPU limit, per chart advice:
+          # throttling the WireGuard data path degrades it silently).
+          health:
+            enabled: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              memory: 256Mi
+              ephemeral-storage: 256Mi
         newtInstances:
           - name: homelab-k8s
             enabled: true
