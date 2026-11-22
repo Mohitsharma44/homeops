@@ -90,6 +90,83 @@ spec:
                   }
                 }
               }
+
+              // ============================================================
+              // TLS certificate expiry probes (feeds the infra-cert-expiry
+              // alert group in kube-prometheus-stack.yaml)
+              // ============================================================
+              //
+              // For certs cert-manager does NOT manage. Omni's cert is renewed
+              // by certbot on the omni host and Omni reads it only at start;
+              // the restart hook silently no-op'd and Omni served an expired
+              // cert from 2026-09-27 to 2026-11-20 with nothing alerting.
+              //
+              // insecure_skip_verify is LOAD-BEARING. With verification on, an
+              // expired cert fails the handshake, probe_success goes to 0 and
+              // probe_ssl_earliest_cert_expiry DISAPPEARS -- the expiry alert
+              // would go NoData at the exact moment it matters. Skipping
+              // verification keeps the expiry series present (even negative).
+              // The probe checks expiry, not trust.
+              //
+              // This is a daemonset, so every node probes. The `prober`
+              // external label keeps the three writers' series distinct (else
+              // Prometheus rejects them as duplicates); the rules aggregate.
+              prometheus.exporter.blackbox "tls" {
+                config = "{ modules: { tls_expiry: { prober: tcp, timeout: 10s, tcp: { tls: true, tls_config: { insecure_skip_verify: true } } } } }"
+
+                // 443 = UI/API, 8090 = machine API (SideroLink), 8100 = k8s proxy.
+                // All three serve the same certbot cert today, but each is a
+                // separate listener that could be handed a different file.
+                target {
+                  name    = "omni-443"
+                  address = "omni.sharmamohit.com:443"
+                  module  = "tls_expiry"
+                  labels  = { "endpoint" = "omni.sharmamohit.com:443" }
+                }
+                target {
+                  name    = "omni-8090"
+                  address = "omni.sharmamohit.com:8090"
+                  module  = "tls_expiry"
+                  labels  = { "endpoint" = "omni.sharmamohit.com:8090" }
+                }
+                target {
+                  name    = "omni-8100"
+                  address = "omni.sharmamohit.com:8100"
+                  module  = "tls_expiry"
+                  labels  = { "endpoint" = "omni.sharmamohit.com:8100" }
+                }
+              }
+
+              prometheus.scrape "tls_probes" {
+                targets         = prometheus.exporter.blackbox.tls.targets
+                forward_to      = [prometheus.relabel.tls_probes.receiver]
+                scrape_interval = "300s"
+                scrape_timeout  = "30s"
+                job_name        = "tls-probe"
+              }
+
+              // instance = the probed HOST (not the port, not the alloy pod),
+              // so all of one host's ports share one Slack thread -- the
+              // critical/warning route groups by instance alone.
+              prometheus.relabel "tls_probes" {
+                forward_to = [prometheus.remote_write.local.receiver]
+
+                rule {
+                  source_labels = ["endpoint"]
+                  regex         = "([^:]+):.*"
+                  target_label  = "instance"
+                  replacement   = "$1"
+                }
+              }
+
+              prometheus.remote_write "local" {
+                external_labels = {
+                  prober = constants.hostname,
+                }
+                endpoint {
+                  url = "http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/write"
+                }
+              }
           resources:
             requests:
               cpu: 100m
