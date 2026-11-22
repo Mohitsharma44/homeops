@@ -44,6 +44,8 @@ fi
 
 PROMOTED=0
 FAILED=0
+# pin_dir compares physical paths, so LANDING must be one too.
+LANDING_PHYS=$(cd -P "${LANDING}" && pwd -P)
 
 # Everything under the landing share is sender-controlled, including whether a
 # path is a symlink. A sender that symlinks its service dir into /archive would
@@ -77,9 +79,11 @@ landed_ok() {
 # in the final component.
 pin_dir() {
   cd / && cd -P "${LANDING}/$1" 2>/dev/null || return 1
-  case "$(pwd -P)" in
-    "${LANDING}"/*/*) return 0 ;;
-  esac
+  # EXACTLY the expected dir, not merely "somewhere under LANDING": a swap to
+  # another sender's dir would pass a prefix test and mislabel its files.
+  if [ "$(pwd -P)" = "${LANDING_PHYS}/$1" ]; then
+    return 0
+  fi
   cd /
   return 1
 }
