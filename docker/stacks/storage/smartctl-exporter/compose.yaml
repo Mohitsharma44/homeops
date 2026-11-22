@@ -25,7 +25,7 @@
 
 services:
   smartctl-exporter:
-    image: prometheuscommunity/smartctl-exporter:v0.14.0
+    image: prometheuscommunity/smartctl-exporter:v0.15.0
     container_name: smartctl-exporter
     # host networking so the exporter binds 9633 directly on the host, matching
     # backup-verifier (:9101) and garage-snapshotter (:9102). Alloy scrapes it
