@@ -45,10 +45,39 @@ fi
 PROMOTED=0
 FAILED=0
 
+# Everything under the landing share is sender-controlled, including whether a
+# path is a symlink. A sender that symlinks its service dir into /archive would
+# otherwise make the loops below copy, "promote" and then `rm` ARCHIVED files.
+# Accept a landed file only if it, its service dir and its host dir are plain
+# (not symlinks), it resolves to a path still under LANDING, and the host and
+# service names fit the allowlist (they also become metric labels).
+safe_name() {
+  case "$1" in
+    ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  return 0
+}
+landed_ok() {
+  f="$1"
+  svc_d=$(dirname "$f"); host_d=$(dirname "$svc_d")
+  [ ! -L "$f" ] && [ ! -L "$svc_d" ] && [ ! -L "$host_d" ] || return 1
+  [ -f "$f" ] || return 1
+  case "$(realpath "$f" 2>/dev/null)" in
+    "${LANDING}"/*) ;;
+    *) return 1 ;;
+  esac
+  safe_name "$(basename "$host_d")" && safe_name "$(basename "$svc_d")" && safe_name "$(basename "$f")"
+}
+
 # Walk every <host>/<service>/ pair under the landing share, so adding Omni or
 # Komodo's database later needs no change here -- just a new sender.
 for src in "${LANDING}"/*/*/*.sqlite3; do
-  [ -f "$src" ] || continue
+  [ -e "$src" ] || [ -L "$src" ] || continue
+  if ! landed_ok "$src"; then
+    err "unsafe landed path (symlink, escapes landing, or bad name), ignored: ${src}"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
 
   rel=${src#"${LANDING}/"}          # server04/vaultwarden/vaultwarden_x.sqlite3
   dir=$(dirname "$rel")             # server04/vaultwarden
@@ -86,23 +115,19 @@ done
 
 # Snapshots: trust nothing until the archived COPY matches the sender's sha256.
 for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
-  [ -f "$sidecar" ] || continue
+  [ -e "$sidecar" ] || [ -L "$sidecar" ] || continue
+  if ! landed_ok "$sidecar"; then
+    err "unsafe landed path (symlink, escapes landing, or bad name), ignored: ${sidecar}"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
   src=${sidecar%.sha256}
   rel=${src#"${LANDING}/"}          # omni/omni-etcd/<uuid>_<name>.snapshot
   dir=$(dirname "$rel")
   base=$(basename "$rel")
 
-  # Names are sender-controlled; accept only the shape the sender produces so
-  # nothing below (word-split retention loop included) sees a hostile name.
-  case "$base" in
-    *[!A-Za-z0-9._-]*|.*)
-      err "unsafe snapshot name, ignored: ${rel}"
-      FAILED=$((FAILED + 1))
-      continue ;;
-  esac
-
-  if [ ! -f "$src" ]; then
-    err "sidecar without snapshot, leaving it for the sender to retry: ${rel}.sha256"
+  if [ ! -f "$src" ] || [ -L "$src" ] || ! landed_ok "$src"; then
+    err "sidecar without a plain snapshot beside it, leaving it for the sender to retry: ${rel}.sha256"
     FAILED=$((FAILED + 1))
     continue
   fi
@@ -128,7 +153,11 @@ for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
   fi
 
   staged="${ARCHIVE}/${dir}/.incoming-${base}"
-  if ! cp -p "$src" "$staged" 2>/dev/null; then
+  # NOT cp -p: mtime must be the verifier's promotion time. The sender sets
+  # the landed mtime (sftp put -p) and could fake it -- a future mtime would
+  # defeat the 48h retention guard and fake freshness. A promotion time this
+  # host chose itself cannot be forged from outside.
+  if ! cp "$src" "$staged" 2>/dev/null; then
     err "copy into archive failed: ${rel}"
     FAILED=$((FAILED + 1))
     rm -f "$staged"
@@ -151,8 +180,8 @@ for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
 done
 
 # ---------------------------------------------------------------------------
-# Retention, for PRUNE_DIRS only. mtime is the sender's backup time (put -p,
-# cp -p), so "30 days" means 30 days since Omni took the backup.
+# Retention, for PRUNE_DIRS only. mtime is the verifier's promotion time (see
+# the cp above), so "30 days" means 30 days since the copy was archived.
 # ---------------------------------------------------------------------------
 PRUNED=0
 for pd in ${PRUNE_DIRS}; do
@@ -189,6 +218,9 @@ emit_service() {
   [ -d "$svc_dir" ] || return 0
   host=$(basename "$(dirname "$svc_dir")")
   service=$(basename "$svc_dir")
+  # Label values go into the exposition format verbatim; refuse anything that
+  # could break out of the quotes.
+  safe_name "$host" && safe_name "$service" || return 0
   labels="host=\"${host}\",service=\"${service}\""
 
   # busybox find has no -printf, so walk with stat instead. Using -printf here
