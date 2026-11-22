@@ -52,6 +52,11 @@ services:
     labels:
       komodo.skip:
     restart: unless-stopped
+    # Core runs as PID 1 and never reaps the git processes it spawns. Without
+    # an init they pile up as zombies until the container's pids limit is hit
+    # and every git fetch fails with "cannot fork()" (2311 zombies after 2
+    # months, 2026-11-21). tini reaps them.
+    init: true
     security_opt:
       - apparmor:unconfined
     network_mode: host
