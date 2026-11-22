@@ -140,6 +140,9 @@ Runs Siderolabs Omni for managing Talos Linux Kubernetes clusters.
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
 **Compose**: managed via Komodo (`docker/stacks/omni/omni/compose.yaml`). `/opt/omni` is the data dir only (etcd, `omni.asc`, tls) — the pre-Komodo compose/env files were removed 2026-11-20.
+**Version**: v1.13.3 (2026-11-22). Upgrade **one minor at a time**. Before each hop, take a cold backup: stop the container, tar `/opt/omni`, start it. Pre-upgrade archives are in `/root/omni-backups/`.
+**etcd backups**: `--etcd-backup-local-path` → `/opt/omni-etcd-backups`. The cluster's `backupconfiguration` is set to `enabled: true`, interval 24h; the docs' example leaves out `enabled`, and without it nothing is backed up. Omni **never prunes** these (~90 MB/day), and they sit on the same disk as Omni, so retention and an off-host copy are still to do. Check with `omnictl get etcdbackup`.
+**Metrics**: since v1.13, Omni's metrics listen on `127.0.0.1:2122` only.
 **TLS**: host-side certbot (Route53 DNS-01, `certbot.timer`). Omni reads its cert only at startup, so the deploy hook `/etc/letsencrypt/renewal-hooks/deploy/restart-omni.sh` runs `docker restart omni`.
 **Network**: Uses host network mode — required for Talos machine discovery
 

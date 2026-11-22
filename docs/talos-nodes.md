@@ -17,8 +17,33 @@ Step-by-step instructions for provisioning bare metal Talos nodes with Sidero Om
 
 ## Talos Configuration
 
-- **Version**: v1.12.0
-- **Extensions**: amd-ucode, iscsi-tools, util-linux-tools
+- **Version**: Talos v1.14.6, Kubernetes v1.35.10 (upgraded 2026-11-22 from Talos v1.12.4 / k8s v1.35.1; cluster created on v1.12.0)
+- **Extensions**: amd-ucode, amdgpu, iscsi-tools, util-linux-tools (plus `embedded-config`, which Omni ≥1.13 adds itself for the SideroLink join config)
+- **etcd**: 3.7 storage since Talos 1.14. Metrics are on `:2383`, not `:2379`.
+- **Bootstrap manifests** (flannel, kube-proxy, CoreDNS): Omni's Kubernetes upgrade does **not** update them. After a Talos or Kubernetes
+  upgrade, check `omnictl cluster kubernetes manifest-sync talos-test --dry-run` and apply it on purpose. Last synced 2026-11-22: flannel v0.28.10
+  (nftables mode), kube-proxy v1.35.10, CoreDNS v1.14.7.
+
+### Time sync: plain NTP is required (machine ConfigPatches `450-ntp-plain-talos0{1,2,3}`)
+From Talos 1.14, a machine with no explicit time config uses **NTS** to `time.cloudflare.com`. On this LAN the NTS key exchange (TCP 4460)
+succeeds, but the NTS-authenticated UDP/123 queries get no reply. Time never syncs, and etcd, kubelet and trustd wait forever, so the node
+never goes Ready. Each machine therefore carries an Omni machine-level ConfigPatch:
+
+```yaml
+machine:
+  time:
+    servers:
+      - time.cloudflare.com   # explicit servers => useNTS=false
+```
+
+**A new machine needs the same patch before it runs Talos ≥1.14** (or switch these to one cluster-level patch).
+
+### Upgrading
+- Control-plane machines **cannot be locked** in Omni (`locking controlplanes is not allowed`), and all 3 nodes are control planes.
+  Omni upgrades one machine at a time, in an order it chooses. It only waits for every machine to be Ready, not for Ceph to be clean.
+  For a per-node hold, use a `KubernetesHealthCheck` (an `omnictl apply` of a Job that must succeed between machines). Even that
+  doesn't hold every hand-off: the next machine can start right after the previous one is Ready.
+- Before each upgrade, take a `talosctl etcd snapshot`. Omni also keeps its own etcd backups (see docker-hosts.md, Omni).
 
 ## Prerequisites
 
