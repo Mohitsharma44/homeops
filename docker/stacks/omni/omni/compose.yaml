@@ -1,7 +1,7 @@
 services:
   omni:
     container_name: omni
-    image: ghcr.io/siderolabs/omni:v1.12.4
+    image: ghcr.io/siderolabs/omni:v1.13.3
     restart: always
     network_mode: host
     cap_add:
@@ -14,6 +14,7 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - ${ETCD_VOLUME_PATH}:/_out/etcd
+      - /opt/omni-etcd-backups:/_out/etcd-backups
       - ${ETCD_ENCRYPTION_KEY}:/omni.asc:ro
       - ${TLS_CERT}:/tls.crt:ro
       - ${TLS_KEY}:/tls.key:ro
@@ -27,6 +28,7 @@ services:
       --private-key-source=file:///omni.asc
       --event-sink-port=${EVENT_SINK_PORT}
       --sqlite-storage-path=/_out/etcd/omni.db
+      --etcd-backup-local-path=/_out/etcd-backups
       --bind-addr=${BIND_ADDR}
       --machine-api-bind-addr=${MACHINE_API_BIND_ADDR}
       --k8s-proxy-bind-addr=${K8S_PROXY_BIND_ADDR}
