@@ -7,10 +7,16 @@
 # archive is deliberately not a UGOS shared folder, so it does not even appear in
 # the sender's SFTP chroot). Everything that decides what survives happens here.
 #
-# There is no retention prune. Decided in ticket 05 (Q19): at ~1.25 MB a night on
-# an 11 TB volume, keeping everything costs nothing, and a prune step is one more
-# thing that can fail silently -- which is the exact class of bug this whole
-# ticket exists to fix. Do not add one without revisiting that decision.
+# Two kinds of backup arrive:
+#   *.sqlite3            (server04/vaultwarden) verified by PRAGMA integrity_check
+#   *.snapshot + .sha256 (omni/omni-etcd) verified by the sender's sha256; the
+#                        .sha256 lands LAST, so its presence means "complete"
+#
+# Retention: Vaultwarden is never pruned. Decided in ticket 05 (Q19): at ~1.25 MB
+# a night keeping everything costs nothing, and a prune step is one more thing
+# that can fail silently. Omni etcd snapshots are ~90 MB a day (~33 GB a year),
+# which revisits that decision for them only: PRUNE_DIRS keeps 30 days, never
+# deletes the newest, and refuses to run at all if the newest is over 48h old.
 
 set -eu
 
@@ -18,11 +24,23 @@ LANDING="${LANDING_DIR:-/landing}"
 ARCHIVE="${ARCHIVE_DIR:-/archive}"
 QUARANTINE="${LANDING}/_quarantine"
 METRICS_FILE="${METRICS_FILE:-/run/metrics/metrics}"
+# Space-separated <host>/<service> dirs under the archive that get retention.
+PRUNE_DIRS="${PRUNE_DIRS:-omni/omni-etcd}"
+RETENTION_DAYS="${RETENTION_DAYS:-30}"
+PRUNE_MAX_NEWEST_AGE_H="${PRUNE_MAX_NEWEST_AGE_H:-48}"
 
 log() { echo "[$(date -Is)] $*"; }
 err() { echo "[$(date -Is)] ERROR: $*" >&2; }
 
 mkdir -p "${QUARANTINE}" "$(dirname "${METRICS_FILE}")"
+
+# Copying a 100 MB snapshot can outlast the 15-minute cron interval; never run
+# two verifiers over the same landing files at once.
+exec 9> /run/verify.lock
+if ! flock -n 9; then
+  log "another verify run is in progress; skipping"
+  exit 0
+fi
 
 PROMOTED=0
 FAILED=0
@@ -66,6 +84,96 @@ for src in "${LANDING}"/*/*/*.sqlite3; do
   fi
 done
 
+# Snapshots: trust nothing until the archived COPY matches the sender's sha256.
+for sidecar in "${LANDING}"/*/*/*.snapshot.sha256; do
+  [ -f "$sidecar" ] || continue
+  src=${sidecar%.sha256}
+  rel=${src#"${LANDING}/"}          # omni/omni-etcd/<uuid>_<name>.snapshot
+  dir=$(dirname "$rel")
+  base=$(basename "$rel")
+
+  # Names are sender-controlled; accept only the shape the sender produces so
+  # nothing below (word-split retention loop included) sees a hostile name.
+  case "$base" in
+    *[!A-Za-z0-9._-]*|.*)
+      err "unsafe snapshot name, ignored: ${rel}"
+      FAILED=$((FAILED + 1))
+      continue ;;
+  esac
+
+  if [ ! -f "$src" ]; then
+    err "sidecar without snapshot, leaving it for the sender to retry: ${rel}.sha256"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+  expected=$(cut -d' ' -f1 "$sidecar")
+  mkdir -p "${ARCHIVE}/${dir}"
+  target="${ARCHIVE}/${dir}/${base}"
+
+  # The archive is write-once. A re-sent name with the same content is a
+  # harmless retry; different content under an archived name is either
+  # corruption or a sender trying to overwrite history, and is quarantined.
+  if [ -f "$target" ]; then
+    have=$(sha256sum "$target" | cut -d' ' -f1)
+    if [ "$have" = "$expected" ]; then
+      rm -f "$src" "$sidecar"
+      log "duplicate of archived ${rel}, identical; dropped from landing"
+    else
+      mkdir -p "${QUARANTINE}/${dir}"
+      mv "$src" "$sidecar" "${QUARANTINE}/${dir}/"
+      FAILED=$((FAILED + 1))
+      err "REFUSED overwrite of archived ${rel} with different content; quarantined"
+    fi
+    continue
+  fi
+
+  staged="${ARCHIVE}/${dir}/.incoming-${base}"
+  if ! cp -p "$src" "$staged" 2>/dev/null; then
+    err "copy into archive failed: ${rel}"
+    FAILED=$((FAILED + 1))
+    rm -f "$staged"
+    continue
+  fi
+  actual=$(sha256sum "$staged" | cut -d' ' -f1)
+  if [ -n "$expected" ] && [ "$actual" = "$expected" ]; then
+    cp "$sidecar" "${target}.sha256"
+    mv "$staged" "$target"
+    rm -f "$src" "$sidecar"
+    PROMOTED=$((PROMOTED + 1))
+    log "archived: ${rel} ($(wc -c < "$target") bytes, sha256 ${actual})"
+  else
+    rm -f "$staged"
+    mkdir -p "${QUARANTINE}/${dir}"
+    mv "$src" "$sidecar" "${QUARANTINE}/${dir}/"
+    FAILED=$((FAILED + 1))
+    err "sha256 MISMATCH for ${rel}: expected ${expected:-<empty>}, got ${actual}; quarantined, NOT archived"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# Retention, for PRUNE_DIRS only. mtime is the sender's backup time (put -p,
+# cp -p), so "30 days" means 30 days since Omni took the backup.
+# ---------------------------------------------------------------------------
+PRUNED=0
+for pd in ${PRUNE_DIRS}; do
+  adir="${ARCHIVE}/${pd}"
+  [ -d "$adir" ] || continue
+  newest_f=$(ls -1t "$adir"/*.snapshot 2>/dev/null | head -n 1)
+  [ -n "$newest_f" ] || continue
+  age_h=$(( ($(date +%s) - $(stat -c %Y "$newest_f")) / 3600 ))
+  if [ "$age_h" -ge "$PRUNE_MAX_NEWEST_AGE_H" ]; then
+    err "retention ${pd}: REFUSED, newest archived snapshot is ${age_h}h old (limit ${PRUNE_MAX_NEWEST_AGE_H}h)"
+    FAILED=$((FAILED + 1))
+    continue
+  fi
+  for f in $(find "$adir" -maxdepth 1 -name '*.snapshot' -mtime "+${RETENTION_DAYS}"); do
+    [ "$f" = "$newest_f" ] && continue
+    rm -f "$f" "${f}.sha256"
+    PRUNED=$((PRUNED + 1))
+    log "retention ${pd}: deleted $(basename "$f") (older than ${RETENTION_DAYS}d)"
+  done
+done
+
 # ---------------------------------------------------------------------------
 # Metrics. Written as a plain text file and served over HTTP by busybox httpd,
 # so Prometheus pulls rather than us pushing. Pull matters here: if this
@@ -89,7 +197,10 @@ emit_service() {
   newest=0
   count=0
   bytes=0
-  for f in "$svc_dir"/*.sqlite3; do
+  # The metric names say "vaultwarden" for history: the freshness alert is
+  # keyed on them and already carries host/service labels, so Omni snapshots
+  # are counted under the same names rather than forking the alert.
+  for f in "$svc_dir"/*.sqlite3 "$svc_dir"/*.snapshot; do
     [ -f "$f" ] || continue
     mtime=$(stat -c %Y "$f")
     size=$(stat -c %s "$f")
@@ -136,4 +247,4 @@ done
 
 mv "$TMP" "${METRICS_FILE}"
 
-log "run complete: ${PROMOTED} promoted, ${FAILED} failed"
+log "run complete: ${PROMOTED} promoted, ${FAILED} failed, ${PRUNED} pruned"

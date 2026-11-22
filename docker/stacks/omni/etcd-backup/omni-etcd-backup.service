@@ -1,0 +1,11 @@
+# Host-level unit on the omni host; see omni-etcd-backup.sh for install steps.
+[Unit]
+Description=Prune local Omni etcd backups and push new ones to the storage host
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/omni-etcd-backup
+Nice=10
+IOSchedulingClass=idle

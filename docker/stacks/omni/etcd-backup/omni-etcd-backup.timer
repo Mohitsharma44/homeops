@@ -1,0 +1,13 @@
+# Hourly, although Omni backs up only every 24h: a new snapshot then reaches
+# the NAS within the hour, which keeps the off-host freshness alert (30h)
+# well clear of Omni's 24h interval. A run with nothing new opens no connection.
+[Unit]
+Description=Hourly prune + off-host push of Omni etcd backups
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
