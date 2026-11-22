@@ -61,7 +61,7 @@ Runs Komodo Core (the control plane) as a self-managed stack, alongside systemd 
 | FerretDB | `core-ferretdb-1` | MongoDB-compatible database for Core |
 | PostgreSQL | `core-postgres-1` | Backend for FerretDB |
 | Periphery | systemd service | v2.1.2, outbound mode. Config at `/etc/komodo/periphery.config.toml` (`core_address = http://192.168.11.200:9120`, `connect_as = komodo`). Port 8120 still bound but unused. |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Alloy | via Komodo stack | v1.22.0 (2026-11-22). Host/container metrics and logs |
 
 **Compose**: Managed by Komodo stack `komodo-core`
 **Data**: `/etc/komodo/` (stacks, ssl certs, backups)
@@ -81,7 +81,7 @@ Dedicated NVR host running Frigate with hardware acceleration.
 |---------|-----------|-------|
 | Frigate | `frigate` | v0.18.3 (2026-11-22). Coral TPU (`/dev/apex_0`), privileged. No Intel GPU — `/dev/dri/renderD128` was dropped 2026-08-13 when this host became a VM |
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Alloy | via Komodo stack | v1.22.0 (2026-11-22). Host/container metrics and logs |
 
 **Frigate config**: Compose at `/root/frigate/docker-compose.yaml` (now managed via Komodo).
 Frigate's own `config.yaml` lives at `/etc/komodo/stacks/frigate/.../config/` on the host
@@ -119,7 +119,7 @@ Remote desktop environment. KASM Workspaces is installer-managed (10 containers)
 | KASM Workspaces | 10 containers (`kasm_*`) | Installer-managed, do NOT touch via Komodo |
 | Newt | `newt` | Pangolin tunnel to `pangolin.proxy.sharmamohit.com` |
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Alloy | via Komodo stack | v1.22.0 (2026-11-22). Host/container metrics and logs |
 
 **KASM compose**: `/opt/kasm/1.17.0/docker/docker-compose.yaml` (installer-owned)
 
@@ -137,7 +137,7 @@ Runs Siderolabs Omni for managing Talos Linux Kubernetes clusters.
 |---------|-----------|-------|
 | Omni | `omni` | Host network, `NET_ADMIN`, `/dev/net/tun` access |
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
-| Alloy | via Komodo stack | Host/container metrics and logs |
+| Alloy | via Komodo stack | v1.22.0 (2026-11-22). Host/container metrics and logs |
 
 **Compose**: managed via Komodo (`docker/stacks/omni/omni/compose.yaml`). `/opt/omni` is the data dir only (etcd, `omni.asc`, tls) — the pre-Komodo compose/env files were removed 2026-11-20.
 **Version**: v1.13.3 (2026-11-22). Upgrade **one minor at a time**. Before each hop, take a cold backup: stop the container, tar `/opt/omni`, start it. Pre-upgrade archives are in `/root/omni-backups/`.
@@ -187,10 +187,12 @@ only; a shell `rm` desyncs UGOS's own share records.
 
 | Service | Container | Notes |
 |---------|-----------|-------|
-| Garage | `garage` | S3 on 3900, admin on 3903, RPC on 3901 (`objects.sharmamohit.com:3900`) |
+| Garage | `garage` | v2.5.0 (2026-11-22; one-way, no downgrade). S3 on 3900, admin on 3903, RPC on 3901 (`objects.sharmamohit.com:3900`) |
 | Snapshotter | `garage-snapshotter` | Triggers metadata snapshots on wall clock, exports freshness on 9102 |
 | Backup verifier | `backup-verifier` | Integrity-checks landed backups, promotes them, exports metrics on 9101 |
 | Periphery | `periphery-periphery-1` | `PERIPHERY_ROOT_DIRECTORY=/volume2/komodo/etc-komodo` |
+| Alloy | `alloy` (stack `storage-alloy`) | v1.22.0 (2026-11-22). Journal stream label is `job="journal"` since Alloy 1.20 (was `loki.source.journal.host`) |
+| smartctl-exporter | `smartctl-exporter` | v0.15.0 (2026-11-22). 7 devices on 9633 |
 
 **Storage**: `/volume1` = md1, RAID6, 4x 6TB IronWolf. `/volume2` = md2, RAID1 SSD.
 The boot device (`nvme0n1`) is in no array.
@@ -229,7 +231,7 @@ Public gateway. Runs Pangolin (reverse tunnel control plane) + Gerbil (WireGuard
 | pocketid | `pocketid` | v2.19.3 (2026-11-22). OIDC provider, `pocketid.proxy.sharmamohit.com`. LDAP sync enabled; first successful reconciliation verified after upgrade |
 | lldap | `lldap` | LDAP directory (identity-internal network only) |
 | periphery | `periphery` | v2.1.2, outbound mode. Dials Core via `komodo.private.sharmamohit.com:9120`. Isolated on `newt-periphery` Docker network. Managed by Komodo as the `aegis-periphery` stack. |
-| racknerd-aegis-alloy | `racknerd-aegis-alloy-alloy-1` | Host/container metrics + CrowdSec scrape, pushes via Pangolin tunnel |
+| racknerd-aegis-alloy | `racknerd-aegis-alloy-alloy-1` | v1.22.0 (2026-11-22). Host/container metrics + CrowdSec scrape, pushes via Pangolin tunnel |
 
 **Outbound periphery DNS**: The `aegis-periphery` container is on the isolated `newt-periphery` bridge network (no host networking). It resolves `*.private.sharmamohit.com` via Docker's embedded DNS → host systemd-resolved → split DNS rule → Pangolin DNS proxy at `100.96.128.1`. The split-DNS rule is installed by the `pangolin-dns.service` systemd unit (`/usr/local/bin/pangolin-dns-setup.sh`, oneshot, runs after `docker.service`), which derives the DNS proxy IP dynamically from the routed subnet on the `pangolin` interface.
 
