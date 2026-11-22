@@ -1,6 +1,6 @@
 services:
   pangolin:
-    image: fosrl/pangolin:1.26.0
+    image: fosrl/pangolin:1.27.1
     container_name: pangolin
     restart: unless-stopped
     networks:
@@ -21,7 +21,7 @@ services:
         max-file: "3"
 
   gerbil:
-    image: fosrl/gerbil:1.5.1
+    image: fosrl/gerbil:1.6.0
     container_name: gerbil
     restart: unless-stopped
     networks:
@@ -50,7 +50,7 @@ services:
         max-file: "3"
 
   traefik:
-    image: traefik:v3.7.13
+    image: traefik:v3.7.19
     container_name: pangolin-traefik
     restart: unless-stopped
     network_mode: service:gerbil
