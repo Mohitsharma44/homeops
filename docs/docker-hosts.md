@@ -79,7 +79,7 @@ Dedicated NVR host running Frigate with hardware acceleration.
 
 | Service | Container | Notes |
 |---------|-----------|-------|
-| Frigate | `frigate` | Coral TPU (`/dev/apex_0`), privileged. No Intel GPU — `/dev/dri/renderD128` was dropped 2026-08-13 when this host became a VM |
+| Frigate | `frigate` | v0.18.3 (2026-11-22). Coral TPU (`/dev/apex_0`), privileged. No Intel GPU — `/dev/dri/renderD128` was dropped 2026-08-13 when this host became a VM |
 | Periphery | `komodo-periphery-periphery-1` | Standard periphery |
 | Alloy | via Komodo stack | Host/container metrics and logs |
 
@@ -157,8 +157,8 @@ Primary application server and Docker build server for custom images.
 
 | Service | Container | Notes |
 |---------|-----------|-------|
-| Traefik | `traefik` | Reverse proxy, `traefik_proxy` external network |
-| Vaultwarden | `vaultwarden` | `bitwarden.sharmamohit.com` |
+| Traefik | `traefik` | v3.7.19 (2026-11-22). Reverse proxy, `traefik_proxy` external network |
+| Vaultwarden | `vaultwarden` | v1.37.5 (2026-11-22), bundled web vault 2026.10.1. `bitwarden.sharmamohit.com` |
 | Vaultwarden Backup | `vaultwarden-backup` | Daily SQLite backup sidecar (02:00 UTC) |
 | Periphery | `komodo-periphery-periphery-1` | Also serves as Komodo build server |
 | Alloy | systemd service | Host metrics + SMART + cAdvisor + Docker logs + journal. Config at `/etc/alloy/config.alloy` |
@@ -226,7 +226,7 @@ Public gateway. Runs Pangolin (reverse tunnel control plane) + Gerbil (WireGuard
 | pangolin-traefik | `pangolin-traefik` | Inner Traefik, `network_mode: service:gerbil` |
 | pangolin-newt | `pangolin-newt` | Newt agent — VPS-side site for `racknerd-aegis` |
 | pangolin-client-obs | `pangolin-client-obs` | Machine Client, network_mode: host. Provides Pangolin DNS proxy + WireGuard routes to private resources (k8s-prometheus, k8s-loki, komodo.private) |
-| pocketid | `pocketid` | OIDC provider, `pocketid.proxy.sharmamohit.com` |
+| pocketid | `pocketid` | v2.19.3 (2026-11-22). OIDC provider, `pocketid.proxy.sharmamohit.com`. LDAP sync enabled; first successful reconciliation verified after upgrade |
 | lldap | `lldap` | LDAP directory (identity-internal network only) |
 | periphery | `periphery` | v2.1.2, outbound mode. Dials Core via `komodo.private.sharmamohit.com:9120`. Isolated on `newt-periphery` Docker network. Managed by Komodo as the `aegis-periphery` stack. |
 | racknerd-aegis-alloy | `racknerd-aegis-alloy-alloy-1` | Host/container metrics + CrowdSec scrape, pushes via Pangolin tunnel |
