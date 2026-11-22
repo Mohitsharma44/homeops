@@ -41,9 +41,10 @@ spec:
           daemon:
             keyRotationPolicy: KeyGeneration
             keyGeneration: 2
-          csi:
-            # AES256K kernel mounts require Linux >=7.0; keep CSI on AES.
-            keyType: aes
+          # Rook 1.19.12 CRD has no csi.keyType (pruned).
+          # CSI keys stay aes because CSI rotation is disabled.
+          # Kernel 6.18 cannot use aes256k CSI keys.
+          # Re-check this field at the Rook 1.20+ upgrade before enabling any CSI rotation.
       healthCheck:
         muteHealthWarning:
           # Revisit after every Talos node runs kernel >=7.0 and CSI keys migrate.
