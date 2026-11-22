@@ -7,7 +7,10 @@ server_id = "omni"
 file_paths = ["docker/stacks/omni/omni/compose.yaml"]
 repo = "mohitsharma44/homeops"
 branch = "main"
-auto_update = true
+# auto_update and the push webhook intentionally disabled — Omni upgrades go one
+# minor at a time with a backup first, so a push must never redeploy it on its own.
+# Deploy by hand: km execute deploy-stack omni
+webhook_enabled = false
 [stack.config.pre_deploy]
 path = "docker/stacks/omni/omni"
 command = "sops-decrypt.sh"

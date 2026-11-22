@@ -72,16 +72,18 @@ Stacks with secrets: all alloy stacks (shared `.sops.env`), newt, omni, traefik,
 - **ResourceSync self-reference**: `sync.toml` must define itself to avoid self-deletion (`delete=true`).
 - **KASM**: Installer-managed — only Newt is Komodo-managed.
 - **AppArmor on komodo LXC**: `mask-apparmor.service` hides `/sys/kernel/security` for Docker in unprivileged LXC.
-- **Auto-update disabled stacks** (4 exceptions — never enable `auto_update` on these):
+- **Auto-update disabled stacks** (5 exceptions — never enable `auto_update` on these):
   | Stack | Reason |
   |-------|--------|
   | `komodo-core` | Komodo cannot redeploy itself — kills the process mid-deploy |
   | `aegis-pangolin` | Provides the WireGuard tunnel Komodo uses to reach VPS Periphery — restart severs management connection |
   | `aegis-newt` | Same — Newt is the tunnel client; dropping it cuts the VPS management path |
   | `aegis-periphery` | Same — Periphery is the Komodo agent on the VPS; restarting it makes the VPS unreachable |
+  | `omni` | Omni upgrades go one minor at a time, backup first; the push webhook is off too (`webhook_enabled = false`) |
 
-  All other stacks have `auto_update = true` and redeploy automatically after a sync. For these 4, deploy manually:
+  All other stacks have `auto_update = true` and redeploy automatically after a sync. For these 5, deploy manually:
   - `komodo-core`: `km execute deploy-stack komodo-core`
+  - `omni`: `km execute deploy-stack omni`
   - VPS tunnel stacks: `km execute run-procedure deploy-vps-infra` (runs in safe order)
 
 - **deploy-vps-infra stage order**: gateway → pangolin → 30s sleep → **pangolin-client** → newt → periphery → identity + monitoring. The pangolin-client (aegis-pangolin-client / racknerd-aegis-obs Machine Client) is deployed right after the sleep so it gets a fresh WireGuard handshake before downstream stacks come up — this self-heals the WG state in the happy path.
