@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: rook-ceph-cluster
-      version: "1.20.10"
+      version: "1.21.2"
       sourceRef:
         kind: HelmRepository
         name: rook-release
@@ -41,6 +41,10 @@ spec:
       repository: quay.io/ceph/ceph
       tag: v19.2.7
     cephClusterSpec:
+      network:
+        connections:
+          # Existing kernel maps use msgr1; protocol migration is deferred.
+          requireMsgr2: false
       security:
         cephx:
           daemon:
