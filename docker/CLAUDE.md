@@ -38,7 +38,7 @@ periphery/                 # Custom periphery Dockerfile + sops-decrypt.sh
 - **UI**: https://komodo.sharmamohit.com
 - **API**: http://komodo.sharmamohit.com:9120 (HTTP, not HTTPS)
 - **CLI**: `km`
-- **Periphery**: v2.3.2 on the 6 reachable hosts; kasm is stranded at 2.2.0 (host unreachable — it converges on next boot). All 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
+- **Core + Periphery**: v2.3.4 (2026-11-22; image ships sops 3.13.3 / age 1.3.2) on the 6 reachable hosts; kasm is stranded at 2.2.0 (host unreachable — it converges on next boot). All 7 in outbound mode (dial Core on websocket :9120 over PKI keypair). Port 8120 is still bound on each host as a legacy inbound endpoint but is unused for management.
 
 ## Secrets (SOPS + age)
 
@@ -165,6 +165,25 @@ km list servers -a
   Komodo is talking through, so the deploy reports failure and leaves the new container
   `Created` under a hash-prefixed name. Recover:
   `docker rm periphery && docker rename <hash>_periphery periphery && docker start periphery`.
+- **VPS without the chicken-and-egg (2026-11-22):** after pushing + syncing the pin, recreate
+  from the host instead of through Komodo: `ssh hs`, then in
+  `/etc/komodo/stacks/aegis-periphery` run `git pull --ff-only origin main` and, in
+  `docker/stacks/racknerd-aegis/periphery`, `docker compose -p aegis-periphery up -d`. The
+  agent is restarted by the host's docker, not by itself, so no hash-prefixed `Created`
+  container. Afterwards an idempotent `km execute deploy-stack aegis-periphery` succeeds in
+  ~3s without a restart and proves `sops-decrypt.sh` in the new image.
+- **systemd Periphery without the delete-before-download risk:** instead of
+  setup-periphery.py, `curl -f` `releases/download/v<new>/periphery-x86_64` to
+  `/usr/local/bin/periphery.<new>-new`, compare its sha256 with the release asset digest,
+  run `--version`, keep the old binary as `periphery.<old>-bak`, `mv` it into place, and
+  `systemctl restart periphery`. The config and unit file already exist, so the script does
+  nothing more than this.
+- **Periphery image downloads are checksum-pinned.** The Dockerfile uses `ADD --checksum`
+  (needs the `# syntax=docker/dockerfile:1.7` line: server04's Docker 24 BuildKit has it
+  labs-only). When bumping sops or age, update the digest from sops'
+  `checksums.txt` / age's release asset digest, or the build fails.
+- **storage (UGOS) rejects scp** (SFTP is chrooted to share names): stream a script with
+  `ssh host 'cat > ~/x.sh' < x.sh`. That is fine for non-secret content only.
 - **kasm** is unreachable and will stay on the old version. That's accepted; nothing is
   actively managed on it.
 

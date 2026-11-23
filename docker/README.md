@@ -24,7 +24,7 @@ Manages Docker containers across 7 hosts (6 LAN + 1 VPS) via [Komodo](https://ko
   systemd                             Server)  NAS)               via Pangolin
   Periphery)                                                      tunnel)
 
-  All Peripheries (v2.1.2):
+  All Peripheries (v2.3.4; kasm 2.2.0):
   - Dial Komodo Core (no inbound ports needed)
   - PKI keypair auth (`/config/keys` volume, per-periphery key)
   - Run pre_deploy hooks (sops-decrypt.sh)
