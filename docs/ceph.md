@@ -10,9 +10,9 @@ Rook-Ceph is split into four parts to avoid Helm lifecycle issues with immutable
 
 | Part | Managed By | Location |
 |------|-----------|----------|
-| Rook operator (v1.20.10) | Flux HelmRelease | `kubernetes/infrastructure/controllers/rook-ceph/` |
-| CSI drivers (chart 1.0.4) | Flux HelmRelease (`ceph-csi-drivers`) | `kubernetes/infrastructure/controllers/rook-ceph/csi-drivers-hr.yaml` |
-| CephCluster (chart v1.20.10) | Flux HelmRelease (`rook-ceph-cluster`) | `kubernetes/infrastructure/configs/ceph-cluster.yaml` |
+| Rook operator (v1.21.2) | Flux HelmRelease | `kubernetes/infrastructure/controllers/rook-ceph/` |
+| CSI drivers (chart 1.1.0) | Flux HelmRelease (`ceph-csi-drivers`) | `kubernetes/infrastructure/controllers/rook-ceph/csi-drivers-hr.yaml` |
+| CephCluster (chart v1.21.2) | Flux HelmRelease (`rook-ceph-cluster`) | `kubernetes/infrastructure/configs/ceph-cluster.yaml` |
 | Storage resources | Flux Kustomization (standalone YAML) | `kubernetes/infrastructure/configs/ceph/` |
 
 **Why standalone manifests?** StorageClass parameters (like `region`) are immutable in Kubernetes. When the Helm chart renders a StorageClass with different parameters during an upgrade, `helm upgrade` fails. By managing CephBlockPool, CephFilesystem, CephObjectStore, and their StorageClasses as standalone manifests outside Helm, Flux applies them independently and avoids this problem.
@@ -91,14 +91,16 @@ CVE-2025-30156 daemon-key remediation completed on Rook v1.19.12 / Ceph
 19.2.6 during P4. P6 subsequently upgraded Ceph to **19.2.7**. P8 upgraded Rook and the cluster
 chart to **v1.20.10**, adopted **ceph-csi-drivers 1.0.4** alongside the bundled
 CSI operator **1.0.4**, and brought the CSI plugins to **v3.17.1**. Ceph remains
-19.2.7 with daemon key generation 2. `cephImage` is explicitly pinned to
+19.2.7 with daemon key generation 2. P9 subsequently upgraded Rook and the
+cluster chart to **v1.21.2**, CSI operator/drivers to **1.1.0** and plugins to
+**v3.18.1**, retaining that Ceph image and security state. `cephImage` is explicitly pinned to
 `quay.io/ceph/ceph:v19.2.7`; all 18 running daemon/toolbox pods (32 containers)
 use digest `sha256:3fc0a79f1c671f0e75be24ba77a4ab32227e5ea080e16dfc0840a1dc6c30bf7e`.
 The linux/amd64 platform manifest is
 `sha256:b7363bbc7e9e905dcc91a0c542a81916e95a96724018b8d85a374d21714bb1f9`.
 `ceph versions` confirms all 11 mon/mgr/osd/mds/rgw daemons at 19.2.7.
 
-The patch roll kept at most one OSD down and monitor quorum at two or more.
+The P6 patch roll kept at most one OSD down and monitor quorum at two or more.
 The three nonclean-PG intervals recovered to 201 active+clean in 22.03, 24.04
 and 20.03 seconds. The independent filesystem reconciler briefly raised
 `MDS_ALL_DOWN` during its roll (about eight seconds), then restored active and
@@ -203,5 +205,46 @@ Keep `csi.createCsiOperatorResources: true` explicit and validate its rendered
 ConfigMap value plus the current operator's true-setting log. In chart 1.21.2,
 omitting the value renders null and can delete the existing CephConnection and
 ClientProfile. `deleteUnusedCrushRules: false` preserves this phase's CRUSH scope.
-P9 has not run; any later 1.21 upgrade must preserve msgr1 compatibility with
-`requireMsgr2: false` while these kernel mounts remain in use.
+P9 preserves msgr1 compatibility with `requireMsgr2: false` while these kernel
+mounts remain in use; protocol enablement is deferred.
+
+## Rook 1.21 compatibility and verification (P9)
+
+The separately authorized 1.21.2 hop retained all original CSI/CSIDriver and nine
+PVC/PV identities. Both CSIDrivers now have `podInfoOnMount: true`, a mutable
+update with their UIDs preserved; attachRequired, fsGroupPolicy and seLinuxMount
+remain unchanged. The Rook CSI image-set ConfigMap intentionally has empty image
+strings; CSI operator 1.1.0 defaults produce the verified plugin 3.18.1 images.
+Flux records the new operator history as `1.21.2` without a `v`; the driver
+readyExpr matches that exact observed format while retaining generation, Ready
+and suspension checks.
+
+`network.connections.requireMsgr2: false` remains explicit in Git and live.
+Both the old and new installed chart manifests already rendered false, so Helm's
+two-way merge left the previously absent live field unchanged. An authorized
+single-field JSON Patch, guarded by UID/resourceVersion and preceded by a server
+dry-run, restored the false pin. Read-back, successful current-generation reconcile
+and observations at least five minutes apart confirm persistence. All osd/mgr/mds
+`ms_bind_msgr1` settings remain true, no daemon has a disabling argument, and all
+three monitors retain v2 endpoints. Insecure global-ID reclaim stays false.
+This preserves existing msgr1 kernel maps; no new-map msgr2 negotiation is claimed.
+The canary reported kernel filesystem type `ceph` with no explicit `ms_mode` mount
+field, and the scalar RBD default-map-options read was empty. Neither observation
+is treated as negotiated-protocol proof.
+
+P9's sampled CSI readiness pause was 28.2s; the slowest of eight sidecar leases
+acquired leadership 162.8s after Ready, within 180s. No FailedCreate events or
+HEALTH_ERR samples were observed; sampled quorum stayed at 3 and no more than one OSD was down. Sampled nonclean-PG
+intervals recovered in 42.7s and 23.2s. All 201 PGs are active+clean at the final gate.
+Fresh 1Gi RBD and CephFS claims passed all 18 cross-node write/read/remount markers
+and independent reads on 01→02→03→01, then normal cleanup/reclaim completed.
+The four original AES keys/fingerprints and CSI generation remain unchanged;
+daemon/child generation remains 2 and Ceph remains 19.2.7.
+
+**P10+ entry gate:** compare every explicitly Git-pinned CephCluster field against
+a fresh live object, including mapped image/monitoring fields. Save each path,
+expected/actual typed value, Git revision/file digest and CephCluster UID/resourceVersion.
+An absent false/zero/empty pin is a mismatch; desired Git values, release Ready and
+a successful Helm upgrade do not prove live equality. The current 12 pinned leaves
+all match; 14 missing/unsafe-value negative tests reject. Re-inventory new pins for
+later phases and obtain a reviewed disposition for any mismatch before mutation.
