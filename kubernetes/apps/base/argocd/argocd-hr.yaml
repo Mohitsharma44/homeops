@@ -39,7 +39,7 @@ spec:
   chart:
     spec:
       chart: argo-cd
-      version: "9.7.1"
+      version: "10.2.2"
       sourceRef:
         kind: HelmRepository
         name: argo-helm
@@ -52,6 +52,11 @@ spec:
   values:
     global:
       domain: argocd.sharmamohit.com
+      # Chart 10 creates NetworkPolicies by default. The CNI here (flannel) does not
+      # enforce them, so they would be inert and untestable; keep parity and revisit
+      # if the CNI changes.
+      networkPolicy:
+        create: false
     configs:
       cm:
         # ArgoCD external URL — required for the OIDC callback to resolve
