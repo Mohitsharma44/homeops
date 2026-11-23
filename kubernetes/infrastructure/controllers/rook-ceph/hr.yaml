@@ -33,11 +33,6 @@ spec:
     deleteUnusedCrushRules: false
     csi:
       createCsiOperatorResources: true
-    ceph-csi-operator:
-      controllerManager:
-        manager:
-          env:
-            csiServiceAccountPrefix: ceph-csi-
   postRenderers:
   - kustomize:
       patches:
