@@ -7,6 +7,19 @@ Flux is installed and upgraded by **flux-operator**, and flux-operator is itself
 | flux-operator chart | `kubernetes/clusters/minipcs/flux-operator.yaml` (OCIRepository `ref.tag` + HelmRelease) | exact chart version |
 | Flux distribution | `kubernetes/clusters/minipcs/flux-instance.yaml` (`spec.distribution.version`) | exact Flux version |
 
+Current (2026-11-23): **flux-operator 0.63.1, Flux 2.10.1**. The controllers are source-controller 1.10.2, kustomize-controller 1.10.2, helm-controller 1.7.2 and notification-controller 1.10.1. Flux 2.10 supports Kubernetes 1.35 (≥1.35.2) through 1.37.
+
+## Known gap: GAP-P5-1 (open)
+flux-operator **v0.63.0/v0.63.1** cannot run its forced CRD migration.
+- On every Flux minor bump it logs `failed to migrate resources … continue list option is not supported by the cache` for every CRD, and still reports Ready.
+- The cause is upstream PR #1106, which paginates the migrator through the cached client. v0.62.x did not have the bug.
+- Effect: the `alerts` and `providers` CRDs keep `status.storedVersions: [v1beta3, v1]` after the 2.10 storage switch. Both kinds have **0 objects**, so this is harmless until a future Flux release removes `v1beta3`; that CRD update would then be refused.
+- **Cleanup**, once an operator release fixes the migrator:
+  1. Bump `ref.tag` in `flux-operator.yaml`.
+  2. Force a migration: annotate the FluxInstance with `reconcile.fluxcd.io/requestedAt` and `reconcile.fluxcd.io/forceAt` set to the *same* fresh value.
+  3. Confirm the operator logs `CRD migrated alerts…`/`providers…`, and both CRDs show `storedVersions: [v1]`.
+- Do this **before** any Flux upgrade that drops `v1beta3`. Never patch `status.storedVersions` by hand.
+
 ## Upgrade rules
 - **Use exact versions only.** With a range such as `"2.x"`, the operator elects the newest Flux it bundles. An operator upgrade then silently jumps Flux minors, and a minor *downgrade* is rejected by the operator ("downgrading … is not supported"). `git revert` of a Flux minor bump is therefore not a rollback.
 - **Order:**
@@ -23,3 +36,4 @@ Flux is installed and upgraded by **flux-operator**, and flux-operator is itself
 - 2026-11-23: flux-operator adopted into GitOps at chart 0.40.0 (helm rev 2), then upgraded to 0.63.1 (rev 3). Flux held at 2.7.5.
 - 2026-11-23: **Flux 2.7.5 → 2.8.8.** All HelmReleases stayed at their revisions through the Helm v4 switch.
 - 2026-11-23: **Flux 2.8.8 → 2.9.6.** notification v1beta2 is no longer served; all HelmReleases stayed at their revisions.
+- 2026-11-23: **Flux 2.9.6 → 2.10.1.** SOPS decryption verified: infra-controllers and infra-configs reconciled at the hop commit, and all 13 decrypted Secrets are present. alerts/providers storage moved to v1 (see GAP-P5-1).

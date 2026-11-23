@@ -262,9 +262,10 @@ kubectl -n flux-system create secret generic flux-system \
   --from-literal=githubAppInstallationID=<installation-id> \
   --from-file=githubAppPrivateKey=<path-to-private-key.pem>
 
-# 4. Install Flux Operator
+# 4. Install Flux Operator (same chart version as kubernetes/clusters/minipcs/flux-operator.yaml;
+#    once Flux syncs, that HelmRelease adopts this release and manages its upgrades)
 helm install flux-operator oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator \
-  --namespace flux-system
+  --version 0.63.1 --namespace flux-system
 
 # 5. Apply FluxInstance
 kubectl apply -f kubernetes/clusters/minipcs/flux-instance.yaml

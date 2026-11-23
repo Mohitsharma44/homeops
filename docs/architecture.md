@@ -146,7 +146,7 @@ Exceptions: server04 and pve03 run systemd Alloy with extended configs (SMART, j
 ```
 ┌─ K8s Cluster (Talos Linux, 3 nodes) ─────────────────────────────────────────┐
 │  Managed by: Omni (Siderolabs)                                                │
-│  Bootstrap:  Flux Operator → FluxInstance CRD                                 │
+│  Bootstrap:  Flux Operator (self-managed HR) → FluxInstance CRD               │
 │                                                                                │
 │  ┌─ Flux Kustomizations (deployment chain) ────────────────────────────────┐  │
 │  │                                                                          │  │
