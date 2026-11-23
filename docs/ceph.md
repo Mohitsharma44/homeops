@@ -6,12 +6,13 @@ Distributed storage via Rook-Ceph, providing block, filesystem, and object stora
 
 ## Deployment Structure
 
-Rook-Ceph is split into three parts to avoid Helm lifecycle issues with immutable StorageClass fields:
+Rook-Ceph is split into four parts to avoid Helm lifecycle issues with immutable StorageClass fields:
 
 | Part | Managed By | Location |
 |------|-----------|----------|
-| Rook operator (v1.19.x) | Flux HelmRelease | `kubernetes/infrastructure/controllers/rook-ceph/` |
-| CephCluster | Flux HelmRelease (`rook-ceph-cluster`) | `kubernetes/infrastructure/configs/ceph-cluster.yaml` |
+| Rook operator (v1.20.10) | Flux HelmRelease | `kubernetes/infrastructure/controllers/rook-ceph/` |
+| CSI drivers (chart 1.0.4) | Flux HelmRelease (`ceph-csi-drivers`) | `kubernetes/infrastructure/controllers/rook-ceph/csi-drivers-hr.yaml` |
+| CephCluster (chart v1.20.10) | Flux HelmRelease (`rook-ceph-cluster`) | `kubernetes/infrastructure/configs/ceph-cluster.yaml` |
 | Storage resources | Flux Kustomization (standalone YAML) | `kubernetes/infrastructure/configs/ceph/` |
 
 **Why standalone manifests?** StorageClass parameters (like `region`) are immutable in Kubernetes. When the Helm chart renders a StorageClass with different parameters during an upgrade, `helm upgrade` fails. By managing CephBlockPool, CephFilesystem, CephObjectStore, and their StorageClasses as standalone manifests outside Helm, Flux applies them independently and avoids this problem.
@@ -87,8 +88,10 @@ radosgw-admin user info --uid=s3user
 ## Current version and CephX security state (2026-11-23)
 
 CVE-2025-30156 daemon-key remediation completed on Rook v1.19.12 / Ceph
-19.2.6 during P4. P6 subsequently upgraded Ceph to **19.2.7**, retaining
-**Rook v1.19.12** and daemon key generation 2. `cephImage` is explicitly pinned to
+19.2.6 during P4. P6 subsequently upgraded Ceph to **19.2.7**. P8 upgraded Rook and the cluster
+chart to **v1.20.10**, adopted **ceph-csi-drivers 1.0.4** alongside the bundled
+CSI operator **1.0.4**, and brought the CSI plugins to **v3.17.1**. Ceph remains
+19.2.7 with daemon key generation 2. `cephImage` is explicitly pinned to
 `quay.io/ceph/ceph:v19.2.7`; all 18 running daemon/toolbox pods (32 containers)
 use digest `sha256:3fc0a79f1c671f0e75be24ba77a4ab32227e5ea080e16dfc0840a1dc6c30bf7e`.
 The linux/amd64 platform manifest is
@@ -118,14 +121,21 @@ kernel >=7.0. RBD mirror peer keys were also left unchanged. The cluster's exist
 preferred/service-ticket ciphers remain AES256K and its allowed cipher set remains
 `[aes, aes256k]`; this operation did not change the allowed cipher policy.
 
-**Unresolved CSI field discrepancy:** `security.cephx.csi.keyType: aes` is present
-in Git, the local chart render **and the installed Helm release manifest**, but is
-absent from the live CephCluster spec (`csi: {}`). The live CRD JSON and fresh
-`kubectl explain` both include this field. The cause remains **UNRESOLVED**;
-candidates are an operator spec
-write-back or chart behavior. Compatibility was verified using the unchanged AES
-CSI identities and an empty/Disabled CSI rotation policy. Re-check this discrepancy
-during the Rook 1.20+ migration **before enabling any CSI rotation**.
+**CSI live pin repaired in P8:** Git, the render and installed release contained
+`security.cephx.csi.keyType: aes`, while the live field was absent. The actual
+1.20.10 upgrade added the new `keyRotationPolicy: Disabled` but still omitted
+live `keyType`. Helm's client-side two-way old→new merge explains this persistence:
+an unchanged rendered field is absent from the update patch. The current CRD
+accepts both fields, and current Rook managed-field writes were status-only.
+The **original historical deletion remains UNRESOLVED and unattributed**.
+
+After the successful chart action, an authorized narrow JSON Patch tested the
+CephCluster UID and resourceVersion, then aligned the live fields to Git:
+`keyType: aes` and `keyRotationPolicy: Disabled`. Read-back, successful current-
+generation reconciliation, unchanged four AES key fingerprints and CSI generation,
+and observations spanning at least five minutes confirmed persistence. A future
+Helm upgrade will not necessarily restore drifted unchanged fields; the P8 gate
+therefore checks the live pin explicitly. Do not enable rotation to diagnose drift.
 
 The following three health warnings are intentionally muted with
 `healthCheck.muteHealthWarning.<code>.policy: mute`: `AUTH_INSECURE_CLIENT_KEY_TYPE`,
@@ -156,3 +166,42 @@ re-rotate keys for a CSI mount error. Overriding `daemon.keyType: aes` also down
 temporary daemon-auth recovery only, requiring a later return to AES256K.
 
 Reference: [Rook v1.19.12 CephX key rotation](https://github.com/rook/rook/blob/v1.19.12/Documentation/Storage-Configuration/Advanced/cephx-key-rotation.md).
+
+## Rook 1.20 CSI chart handoff (P8)
+
+The Flux dependency order is `rook-ceph` → `ceph-csi-drivers` →
+`rook-ceph-cluster`. Exact-version readiness expressions require the dependency's
+current generation and installed chart version. The driver source is
+`https://ceph.github.io/ceph-csi-operator`; its chart pin matches Rook's bundled
+CSI operator. The separate driver chart supplies per-driver SAs/RBAC and adopts
+the existing Driver/OperatorConfig objects. A plain operator chart bump can delete
+legacy accounts and cause FailedCreate even while existing mounts keep working.
+
+P8 first recorded `helm.sh/resource-policy: keep` on all 36 legacy CSI SAs/RBAC,
+then upgraded with the temporary `ceph-csi-` fallback prefix, installed the driver
+chart, and removed that prefix after plugins used the new normalized accounts.
+All 23 driver-chart resources have recorded/live keep annotations. These retained
+objects and the driver HelmRelease must remain present; uninstall or deleting a
+Driver can garbage-collect its plugin workloads. The six original CSI CR UIDs,
+both CSIDriver UIDs/specs and nine original PVC/PV identities survived. Both
+controller Deployments are 2/2 and both node DaemonSets cover all three nodes.
+
+The planned CSI Recreate transition had a sampled readiness pause of about 18.7s.
+CephFS attacher leadership was first observed 186.6s after Pod Ready; the Lease's
+acquireTime was 180.220s after Ready, exceeding the procedure's 180s threshold.
+The orchestrator accepted this recorded deviation: all leases recovered, existing
+consumers stayed healthy, and no CephFS PV existed during the roll. Future waits
+must allow for the 137s leader lease and retry timing; readiness alone does not
+prove immediate attach/provision availability. No FailedCreate occurred.
+
+Fresh 1Gi RBD and CephFS claims passed writes, independent reads and persistent
+remount reads on talos01→talos02→talos03→talos01 (18 exact success markers).
+Only the test namespace/claims/pods were deleted; backing PVs reclaimed normally.
+All nine original claims and their consumers remained healthy.
+
+Keep `csi.createCsiOperatorResources: true` explicit and validate its rendered
+ConfigMap value plus the current operator's true-setting log. In chart 1.21.2,
+omitting the value renders null and can delete the existing CephConnection and
+ClientProfile. `deleteUnusedCrushRules: false` preserves this phase's CRUSH scope.
+P9 has not run; any later 1.21 upgrade must preserve msgr1 compatibility with
+`requireMsgr2: false` while these kernel mounts remain in use.
