@@ -288,39 +288,13 @@ spec:
             value: "0"
 
         ui:
+          # Served by Envoy Gateway on BOTH halves of the split horizon:
+          # kubernetes/infrastructure/gateway/drive-route.yaml (streaming, no body
+          # limit, 3600 s stream idle — the four former nginx annotations) behind
+          # the eg-drive-tls listener certificate. Pangolin's `drive` target is
+          # envoy-home.envoy-gateway-system.svc.cluster.local:443.
           ingress:
-            enabled: true
-            className: nginx
-            annotations:
-              # All four are load-bearing. proxy-body-size "0" removes the 1 MiB
-              # default; the two timeouts default to 60 s each, which would cut a
-              # slow upload even on the LAN where Traefik is not in the path.
-              nginx.ingress.kubernetes.io/proxy-body-size: "0"
-              nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
-              nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-              nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-            hosts:
-              - host: drive.proxy.sharmamohit.com
-                paths:
-                  - path: /
-                    pathType: Prefix
-            # NOT default-tls-cert. That certificate is sharmamohit.com +
-            # *.sharmamohit.com — ONE label deep — and a wildcard does not span
-            # two labels, so it does not cover drive.proxy.sharmamohit.com.
-            # Measured, not assumed: `openssl s_client -connect 192.168.11.90:443
-            # -servername drive.proxy.sharmamohit.com` currently returns
-            # subject=CN=*.sharmamohit.com. Omitting this block silently falls
-            # back to that certificate and every LAN browser shows a name error.
-            # The Certificate is kubernetes/infrastructure/configs/drive-tls-cert.yaml.
-            #
-            # This block only serves the LAN half of the split horizon. The VPS
-            # edge does TLS passthrough for *.proxy.sharmamohit.com, so a public
-            # visitor is served Pangolin's own per-resource certificate and never
-            # sees this one. The two halves fail independently.
-            tls:
-              - secretName: drive-tls-cert
-                hosts:
-                  - drive.proxy.sharmamohit.com
+            enabled: false
 
         # The REST API has no reason to be on a public hostname. The chart's
         # api.ingress would only add a second Ingress; because the UI Ingress

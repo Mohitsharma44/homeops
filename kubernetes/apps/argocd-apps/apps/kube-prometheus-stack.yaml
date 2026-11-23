@@ -69,11 +69,9 @@ spec:
             existingSecret: grafana-admin
             userKey: admin-user
             passwordKey: admin-password
+          # Served by Envoy Gateway: kubernetes/infrastructure/gateway/app-routes.yaml
           ingress:
-            enabled: true
-            ingressClassName: nginx
-            hosts:
-              - grafana.sharmamohit.com
+            enabled: false
           sidecar:
             datasources:
               defaultDatasourceEnabled: false
@@ -123,6 +121,11 @@ spec:
               memory: 512Mi
           grafana.ini:
             server:
+              # Explicit: the chart derives server.domain from the first ingress
+              # host and renders '' once the Ingress is disabled (Envoy Gateway
+              # serves Grafana). Pinning it keeps grafana.ini byte-identical, so
+              # dropping the Ingress does not roll the RWO-backed pod.
+              domain: grafana.sharmamohit.com
               root_url: https://grafana.sharmamohit.com
             unified_alerting:
               enabled: true

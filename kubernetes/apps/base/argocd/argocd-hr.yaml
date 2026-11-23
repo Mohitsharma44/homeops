@@ -102,10 +102,7 @@ spec:
         policy.csv: |
           g, argocd_admins, role:admin
     server:
+      # Served by Envoy Gateway: kubernetes/infrastructure/gateway/https-backend-routes.yaml
       ingress:
-        enabled: true
-        annotations:
-          nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-          nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+        enabled: false
         

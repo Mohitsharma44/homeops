@@ -16,7 +16,6 @@ resources:
   - grafana-admin-secret.yaml
   - grafana-oidc-secret.yaml
   - argocd-oidc-secret.yaml
-  - monitoring-ingress.yaml
   - pangolin-ns.yaml
   - newt-credentials-secret.yaml
   - kaneo-ns.yaml
