@@ -14,7 +14,7 @@ spec:
   - name: rook-ceph
     readyExpr: dep.spec.chart.spec.version == '1.21.2' && dep.metadata.generation
       == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type ==
-      'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == 'v1.21.2'
+      'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == '1.21.2'
       && (!has(dep.spec.suspend) || !dep.spec.suspend)
   chart:
     spec:
@@ -494,4 +494,4 @@ spec:
             annotations:
               helm.sh/resource-policy: keep
             namespace: rook-ceph
-  suspend: true
+  suspend: false
