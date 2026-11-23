@@ -1,0 +1,45 @@
+# Gateway API v1.6.1 STANDARD channel + Envoy Gateway CRDs, as a release of
+# their own so the CRD lifecycle is independent of the controller.
+#
+# Standard, not experimental: everything this repo uses (Gateway, HTTPRoute,
+# ReferenceGrant, BackendTLSPolicy, TLSRoute v1) is standard in v1.6, and the
+# experimental bundle only widens the API surface.
+#
+# The chart ships CRDs as templates, so an uninstall would DELETE them and,
+# with them, every Gateway/HTTPRoute/policy in the cluster. The post-renderer
+# stamps helm.sh/resource-policy=keep on every CRD so that cannot happen.
+# Never delete this HelmRelease without suspending it first.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: envoy-gateway-crds
+  namespace: envoy-gateway-system
+spec:
+  interval: 30m
+  timeout: 5m
+  releaseName: envoy-gateway-crds
+  chartRef:
+    kind: OCIRepository
+    name: envoy-gateway-crds
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    crds:
+      gatewayAPI:
+        enabled: true
+        channel: standard
+      envoyGateway:
+        enabled: true
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: CustomResourceDefinition
+            patch: |
+              - op: add
+                path: /metadata/annotations/helm.sh~1resource-policy
+                value: keep
