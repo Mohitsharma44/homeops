@@ -3,5 +3,4 @@ kind: Kustomization
 resources:
   - certmanager
   - metallb
-  - ingress-nginx
   - rook-ceph

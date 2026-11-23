@@ -29,7 +29,7 @@ GitOps repository for homelab infrastructure. Manages **Kubernetes** (via Flux +
 ├── kubernetes/
 │   ├── clusters/minipcs/       # K8s cluster entry point (Flux)
 │   ├── infrastructure/
-│   │   ├── controllers/        # Core infra (cert-manager, metallb, ingress-nginx, rook-ceph)
+│   │   ├── controllers/        # Core infra (cert-manager, metallb, envoy-gateway, rook-ceph)
 │   │   └── configs/            # Post-controller configs (ceph-cluster, monitoring namespace)
 │   │       └── ceph/           # Standalone Ceph resource manifests
 │   └── apps/
@@ -72,7 +72,7 @@ flux-operator → flux-instance → infra-controllers → infra-configs → apps
 | Component | Purpose | Key Config |
 |-----------|---------|------------|
 | **MetalLB** | LoadBalancer IPs | Pool: `192.168.11.88-98` |
-| **Ingress-NGINX** | HTTP routing | LB IP: `192.168.11.90`, default SSL cert |
+| **Envoy Gateway** | HTTP routing (Gateway API) | LB IP: `192.168.11.91`; config in `kubernetes/infrastructure/gateway/` |
 | **Cert-Manager** | TLS certificates | Let's Encrypt via Route53 DNS01 |
 | **Rook-Ceph** | Distributed storage | Uses all nodes/devices |
 | **ArgoCD** | Application delivery | `argocd.sharmamohit.com` |
@@ -227,7 +227,7 @@ sops -d path/to/secret.yaml
 ```
 Gateway/DNS: 192.168.11.1
 MetalLB Pool: 192.168.11.88 - 192.168.11.98
-Ingress LB:   192.168.11.90
+Gateway LB:   192.168.11.91
 ```
 
 **Domains (wildcard cert: `*.sharmamohit.com`):**

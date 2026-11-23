@@ -22,7 +22,7 @@ Kubernetes deployment chain (`kubernetes/clusters/minipcs/`):
 kubernetes/
 ├── clusters/minipcs/      # K8s cluster entry point (Flux)
 ├── infrastructure/
-│   ├── controllers/       # HelmReleases: cert-manager, metallb, ingress-nginx, rook-ceph
+│   ├── controllers/       # HelmReleases: cert-manager, metallb, envoy-gateway, rook-ceph
 │   └── configs/           # Post-install configs (ceph-cluster, monitoring secrets)
 └── apps/
     ├── base/argocd/       # ArgoCD itself (deployed via Flux)
@@ -65,7 +65,7 @@ sops -d path/to/secret            # decrypt (view only)
 ```
 IP Range: 192.168.11.0/24
 MetalLB Pool: 192.168.11.88-98
-Ingress IP: 192.168.11.90
+Gateway IP: 192.168.11.91 (Envoy Gateway, eg-home; .90 retired with ingress-nginx)
 DNS: 192.168.11.1, 9.9.9.9
 Domain: sharmamohit.com (wildcard cert)
 ```
