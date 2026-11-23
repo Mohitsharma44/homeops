@@ -36,10 +36,11 @@ spec:
     monitoring:
       enabled: true
       createPrometheusRules: true
-    # Keep the running Ceph version fixed during CephX key rotation.
+    # Ceph Tentacle 20.2.5 (one-way; never downgrade). Exact build tag; the P10 gate verifies the digest
+    # (index sha256:4337ac8a..., amd64 sha256:b2f0255d...). Toolbox follows cephImage.
     cephImage:
       repository: quay.io/ceph/ceph
-      tag: v19.2.7
+      tag: v20.2.5-20261028
     cephClusterSpec:
       network:
         connections:
