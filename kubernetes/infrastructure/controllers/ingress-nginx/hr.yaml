@@ -18,7 +18,10 @@ spec:
   chart:
     spec:
       chart: ingress-nginx
-      version: "4.x"
+      # Exact pin of what runs (live: chart 4.15.1, controller v1.15.1). The
+      # project is archived; this pin exists so that reverting the P12
+      # retirement commit restores THIS release, not whatever "4.x" resolves to.
+      version: "4.15.1"
       sourceRef:
         kind: HelmRepository
         name: ingress-nginx
