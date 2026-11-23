@@ -12,14 +12,14 @@ spec:
   timeout: 10m
   dependsOn:
   - name: rook-ceph
-    readyExpr: dep.spec.chart.spec.version == '1.20.10' && dep.metadata.generation
+    readyExpr: dep.spec.chart.spec.version == '1.21.2' && dep.metadata.generation
       == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type ==
-      'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == 'v1.20.10'
+      'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == 'v1.21.2'
       && (!has(dep.spec.suspend) || !dep.spec.suspend)
   chart:
     spec:
       chart: ceph-csi-drivers
-      version: 1.0.4
+      version: 1.1.0
       sourceRef:
         kind: HelmRepository
         name: ceph-csi-operator
@@ -365,6 +365,7 @@ spec:
       - target:
           kind: Role
           name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-r
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: Role
@@ -372,9 +373,11 @@ spec:
             name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-r
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: Role
           name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-r
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: Role
@@ -382,9 +385,11 @@ spec:
             name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-r
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: Role
           name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-r
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: Role
@@ -392,9 +397,11 @@ spec:
             name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-r
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: Role
           name: rook-ceph-rbd-csi-ceph-com-nodeplugin-r
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: Role
@@ -402,9 +409,11 @@ spec:
             name: rook-ceph-rbd-csi-ceph-com-nodeplugin-r
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: RoleBinding
           name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-rb
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: RoleBinding
@@ -412,9 +421,11 @@ spec:
             name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-rb
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: RoleBinding
           name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-rb
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: RoleBinding
@@ -422,9 +433,11 @@ spec:
             name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-rb
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: RoleBinding
           name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-rb
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: RoleBinding
@@ -432,9 +445,11 @@ spec:
             name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-rb
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: RoleBinding
           name: rook-ceph-rbd-csi-ceph-com-nodeplugin-rb
+          namespace: rook-ceph
         patch: |
           apiVersion: rbac.authorization.k8s.io/v1
           kind: RoleBinding
@@ -442,6 +457,7 @@ spec:
             name: rook-ceph-rbd-csi-ceph-com-nodeplugin-rb
             annotations:
               helm.sh/resource-policy: keep
+            namespace: rook-ceph
       - target:
           kind: Driver
           name: rook-ceph.cephfs.csi.ceph.com
@@ -478,4 +494,4 @@ spec:
             annotations:
               helm.sh/resource-policy: keep
             namespace: rook-ceph
-  suspend: false
+  suspend: true

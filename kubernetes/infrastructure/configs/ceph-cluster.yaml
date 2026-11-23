@@ -17,7 +17,7 @@ spec:
       interval: 12h
   dependsOn:
     - name: ceph-csi-drivers
-      readyExpr: "dep.spec.chart.spec.version == '1.0.4' && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == '1.0.4' && (!has(dep.spec.suspend) || !dep.spec.suspend)"
+      readyExpr: "dep.spec.chart.spec.version == '1.1.0' && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == '1.1.0' && (!has(dep.spec.suspend) || !dep.spec.suspend)"
   timeout: 10m
   install:
     remediation:
