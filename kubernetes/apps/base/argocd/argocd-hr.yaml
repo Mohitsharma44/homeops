@@ -39,7 +39,7 @@ spec:
   chart:
     spec:
       chart: argo-cd
-      version: "7.9.1"
+      version: "8.2.7"
       sourceRef:
         kind: HelmRepository
         name: argo-helm
@@ -57,6 +57,10 @@ spec:
         # ArgoCD external URL — required for the OIDC callback to resolve
         # to the public hostname rather than the in-cluster service.
         url: https://argocd.sharmamohit.com
+        # ArgoCD 3.0 defaults to annotation tracking. Pin the existing label
+        # tracking explicitly so the 2.14 -> 3.x hops change nothing; a move to
+        # annotation+label is a separate, deliberately gated follow-up.
+        application.resourceTrackingMethod: label
         exec.enabled: "true"
         statusbadge.enabled: "true"
         # Skip status fields during resource comparison to avoid schema mismatches
