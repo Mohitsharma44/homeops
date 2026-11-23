@@ -1,0 +1,481 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ceph-csi-drivers
+  namespace: rook-ceph
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  interval: 30m
+  releaseName: ceph-csi-drivers
+  timeout: 10m
+  dependsOn:
+  - name: rook-ceph
+    readyExpr: dep.spec.chart.spec.version == '1.20.10' && dep.metadata.generation
+      == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type ==
+      'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == 'v1.20.10'
+      && (!has(dep.spec.suspend) || !dep.spec.suspend)
+  chart:
+    spec:
+      chart: ceph-csi-drivers
+      version: 1.0.4
+      sourceRef:
+        kind: HelmRepository
+        name: ceph-csi-operator
+        namespace: flux-system
+      interval: 12h
+  install:
+    disableTakeOwnership: false
+    remediation:
+      retries: 0
+      remediateLastFailure: false
+  upgrade:
+    remediation:
+      retries: 0
+      remediateLastFailure: false
+  values:
+    operatorConfig:
+      namespace: rook-ceph
+      driverSpecDefaults:
+        imageSet:
+          name: rook-csi-operator-image-set-configmap
+        nodePlugin:
+          priorityClassName: system-node-critical
+          affinity:
+            nodeAffinity: {}
+          enableSeLinuxHostMount: false
+          imagePullPolicy: IfNotPresent
+          kubeletDirPath: "/var/lib/kubelet"
+          resources: {}
+        controllerPlugin:
+          priorityClassName: system-cluster-critical
+          affinity:
+            nodeAffinity: {}
+          deploymentStrategy:
+            type: Recreate
+          hostNetwork: true
+          imagePullPolicy: IfNotPresent
+          replicas: 2
+          resources: {}
+        cephFsClientType: kernel
+        clusterName: rook-ceph
+        deployCsiAddons: false
+        enableMetadata: false
+        fsGroupPolicy: File
+        generateOMapInfo: false
+        log: 
+        grpcTimeout: 150
+        snapshotPolicy: volumeSnapshot
+    drivers:
+      rbd:
+        enabled: true
+        name: rook-ceph.rbd.csi.ceph.com
+        cephFsClientType: kernel
+        clusterName: rook-ceph
+        controllerPlugin:
+          affinity:
+            nodeAffinity: {}
+          imagePullPolicy: ''
+          priorityClassName: system-cluster-critical
+          replicas: 2
+          resources:
+            attacher:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            omapGenerator:
+              limits:
+                memory: 1Gi
+              requests:
+                cpu: 250m
+                memory: 512Mi
+            plugin:
+              limits:
+                memory: 1Gi
+              requests:
+                memory: 512Mi
+            provisioner:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            resizer:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            snapshotter:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          hostNetwork: false
+          deploymentStrategy:
+            type: Recreate
+        deployCsiAddons: false
+        enableMetadata: false
+        fsGroupPolicy: File
+        generateOMapInfo: false
+        imageSet:
+          name: rook-csi-operator-image-set-configmap
+        log: 
+        nodePlugin:
+          affinity:
+            nodeAffinity: {}
+          enableSeLinuxHostMount: false
+          imagePullPolicy: ''
+          kubeletDirPath: "/var/lib/kubelet"
+          priorityClassName: system-node-critical
+          resources:
+            plugin:
+              limits:
+                memory: 1Gi
+              requests:
+                cpu: 250m
+                memory: 512Mi
+            registrar:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+          updateStrategy:
+            type: RollingUpdate
+        grpcTimeout: 150
+        snapshotPolicy: volumeSnapshot
+      cephfs:
+        enabled: true
+        name: rook-ceph.cephfs.csi.ceph.com
+        cephFsClientType: kernel
+        clusterName: rook-ceph
+        controllerPlugin:
+          affinity:
+            nodeAffinity: {}
+          imagePullPolicy: ''
+          priorityClassName: system-cluster-critical
+          replicas: 2
+          resources:
+            attacher:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            plugin:
+              limits:
+                memory: 1Gi
+              requests:
+                cpu: 250m
+                memory: 512Mi
+            provisioner:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            resizer:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            snapshotter:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+          hostNetwork: false
+          deploymentStrategy:
+            type: Recreate
+        deployCsiAddons: false
+        enableMetadata: false
+        fsGroupPolicy: File
+        generateOMapInfo: false
+        imageSet:
+          name: rook-csi-operator-image-set-configmap
+        log: 
+        nodePlugin:
+          affinity:
+            nodeAffinity: {}
+          enableSeLinuxHostMount: false
+          imagePullPolicy: ''
+          kubeletDirPath: "/var/lib/kubelet"
+          priorityClassName: system-node-critical
+          resources:
+            plugin:
+              limits:
+                memory: 1Gi
+              requests:
+                cpu: 250m
+                memory: 512Mi
+            registrar:
+              limits:
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+          updateStrategy:
+            type: RollingUpdate
+        grpcTimeout: 150
+        snapshotPolicy: volumeSnapshot
+      nfs:
+        enabled: false
+        name: rook-ceph.nfs.csi.ceph.com
+      nvmeof:
+        enabled: false
+        name: rook-ceph.nvmeof.csi.ceph.com
+  postRenderers:
+  - kustomize:
+      patches:
+      - target:
+          kind: ServiceAccount
+          name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: rook-ceph-rbd-csi-ceph-com-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ClusterRole
+          name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: rook-ceph-rbd-csi-ceph-com-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: rook-ceph-rbd-csi-ceph-com-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: Role
+          name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-r
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: Role
+          name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-r
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: Role
+          name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-r
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: Role
+          name: rook-ceph-rbd-csi-ceph-com-nodeplugin-r
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-nodeplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: RoleBinding
+          name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-rb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-ctrlplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: RoleBinding
+          name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-rb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: rook-ceph-cephfs-csi-ceph-com-nodeplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: RoleBinding
+          name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-rb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-ctrlplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: RoleBinding
+          name: rook-ceph-rbd-csi-ceph-com-nodeplugin-rb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: rook-ceph-rbd-csi-ceph-com-nodeplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: Driver
+          name: rook-ceph.cephfs.csi.ceph.com
+          namespace: rook-ceph
+        patch: |
+          apiVersion: csi.ceph.io/v1
+          kind: Driver
+          metadata:
+            name: rook-ceph.cephfs.csi.ceph.com
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Driver
+          name: rook-ceph.rbd.csi.ceph.com
+          namespace: rook-ceph
+        patch: |
+          apiVersion: csi.ceph.io/v1
+          kind: Driver
+          metadata:
+            name: rook-ceph.rbd.csi.ceph.com
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: OperatorConfig
+          name: ceph-csi-operator-config
+          namespace: rook-ceph
+        patch: |
+          apiVersion: csi.ceph.io/v1
+          kind: OperatorConfig
+          metadata:
+            name: ceph-csi-operator-config
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+  suspend: true

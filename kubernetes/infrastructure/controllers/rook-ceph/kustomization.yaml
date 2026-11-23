@@ -4,3 +4,5 @@ resources:
   - ns.yaml
   - repo.yaml
   - hr.yaml
+  - csi-repo.yaml
+  - csi-drivers-hr.yaml

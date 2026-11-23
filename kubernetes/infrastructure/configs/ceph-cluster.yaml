@@ -9,20 +9,25 @@ spec:
   chart:
     spec:
       chart: rook-ceph-cluster
-      version: "1.19.x"
+      version: "1.19.12"
       sourceRef:
         kind: HelmRepository
         name: rook-release
         namespace: flux-system
       interval: 12h
+  dependsOn:
+    - name: ceph-csi-drivers
+      readyExpr: "dep.spec.chart.spec.version == '1.0.4' && dep.metadata.generation == dep.status.observedGeneration && dep.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True') && dep.status.history[0].chartVersion == '1.0.4' && (!has(dep.spec.suspend) || !dep.spec.suspend)"
   timeout: 10m
   install:
     remediation:
-      retries: 3
+      retries: 0
+      remediateLastFailure: false
     crds: CreateReplace
   upgrade:
     remediation:
-      retries: -1 # keep trying to remediate
+      retries: 0
+      remediateLastFailure: false
     crds: CreateReplace # Upgrade CRDs on package update
   releaseName: rook-ceph-cluster
   values:

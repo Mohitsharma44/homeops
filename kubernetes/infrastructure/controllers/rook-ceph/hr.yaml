@@ -9,7 +9,7 @@ spec:
   chart:
     spec:
       chart: rook-ceph
-      version: "1.19.x"
+      version: 1.19.12
       sourceRef:
         kind: HelmRepository
         name: rook-release
@@ -18,13 +18,418 @@ spec:
   timeout: 10m
   install:
     remediation:
-      retries: 3
+      retries: 0
+      remediateLastFailure: false
     crds: CreateReplace
   upgrade:
     remediation:
-      retries: -1 # keep trying to remediate
-    crds: CreateReplace # Upgrade CRDs on package update
+      retries: 0
+      remediateLastFailure: false
+    crds: CreateReplace
   releaseName: rook-ceph
   values:
     monitoring:
       enabled: true
+  postRenderers:
+  - kustomize:
+      patches:
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-cephfs-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-cephfs-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-cephfs-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-cephfs-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-nfs-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-nfs-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-nfs-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-nfs-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-nvmeof-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-nvmeof-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-nvmeof-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-nvmeof-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-rbd-ctrlplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-rbd-ctrlplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ServiceAccount
+          name: ceph-csi-rbd-nodeplugin-sa
+          namespace: rook-ceph
+        patch: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: ceph-csi-rbd-nodeplugin-sa
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-cephfs-ctrlplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-cephfs-ctrlplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-cephfs-nodeplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-cephfs-nodeplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-nvmeof-ctrlplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-nvmeof-ctrlplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-nvmeof-nodeplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-nvmeof-nodeplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-rbd-ctrlplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-rbd-ctrlplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: Role
+          name: ceph-csi-rbd-nodeplugin-r
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: Role
+          metadata:
+            name: ceph-csi-rbd-nodeplugin-r
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-cephfs-ctrlplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-cephfs-ctrlplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-cephfs-nodeplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-cephfs-nodeplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-nvmeof-ctrlplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-nvmeof-ctrlplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-nvmeof-nodeplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-nvmeof-nodeplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-rbd-ctrlplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-rbd-ctrlplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: RoleBinding
+          name: ceph-csi-rbd-nodeplugin-rb
+          namespace: rook-ceph
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: RoleBinding
+          metadata:
+            name: ceph-csi-rbd-nodeplugin-rb
+            annotations:
+              helm.sh/resource-policy: keep
+            namespace: rook-ceph
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-cephfs-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-cephfs-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-cephfs-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-cephfs-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-nfs-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-nfs-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-nfs-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-nfs-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-nvmeof-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-nvmeof-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-nvmeof-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-nvmeof-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-rbd-ctrlplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-rbd-ctrlplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRole
+          name: ceph-csi-rbd-nodeplugin-cr
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: ceph-csi-rbd-nodeplugin-cr
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-cephfs-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-cephfs-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-cephfs-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-cephfs-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-nfs-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-nfs-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-nfs-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-nfs-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-nvmeof-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-nvmeof-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-nvmeof-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-nvmeof-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-rbd-ctrlplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-rbd-ctrlplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
+      - target:
+          kind: ClusterRoleBinding
+          name: ceph-csi-rbd-nodeplugin-crb
+        patch: |
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: ceph-csi-rbd-nodeplugin-crb
+            annotations:
+              helm.sh/resource-policy: keep
