@@ -457,9 +457,8 @@ spec:
     # Kustomization depends on. CreateNamespace below is a harmless no-op.
     namespace: sftpgo
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+    # P10 backup freeze: auto-sync removed while the app is quiesced for an application-consistent
+    # SQLite copy. Revert this commit to restore automated prune+selfHeal.
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
