@@ -22,3 +22,4 @@ Flux is installed and upgraded by **flux-operator**, and flux-operator is itself
 - 2026-11-23: argo-helm HelmRepository `source.toolkit.fluxcd.io/v1beta2` → `v1`. The stale `v1beta2` managedFields entry was cleared by the operator's forced migration (`reconcile.fluxcd.io/requestedAt` and `forceAt` set to the same token).
 - 2026-11-23: flux-operator adopted into GitOps at chart 0.40.0 (helm rev 2), then upgraded to 0.63.1 (rev 3). Flux held at 2.7.5.
 - 2026-11-23: **Flux 2.7.5 → 2.8.8.** All HelmReleases stayed at their revisions through the Helm v4 switch.
+- 2026-11-23: **Flux 2.8.8 → 2.9.6.** notification v1beta2 is no longer served; all HelmReleases stayed at their revisions.
