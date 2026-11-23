@@ -478,4 +478,4 @@ spec:
             annotations:
               helm.sh/resource-policy: keep
             namespace: rook-ceph
-  suspend: true
+  suspend: false
