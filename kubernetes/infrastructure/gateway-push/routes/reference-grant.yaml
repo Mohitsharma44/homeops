@@ -1,0 +1,18 @@
+# Lets HTTPRoutes in envoy-gateway-system reference exactly ONE Service in
+# monitoring: the auth proxy. Prometheus and Loki stay unreferenceable from
+# the gateway namespace. Without this grant the push routes resolve to an
+# Envoy direct 500 (fail closed).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-push-to-auth-proxy
+  namespace: monitoring
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: envoy-gateway-system
+  to:
+    - group: ""
+      kind: Service
+      name: push-auth-proxy

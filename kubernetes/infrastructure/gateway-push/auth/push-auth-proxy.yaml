@@ -1,0 +1,227 @@
+# Authenticating reverse proxy for the two monitoring push endpoints. See ../README.md.
+#
+# Replaces the monitoring-ingress.yaml annotations one for one, inside nginx:
+#   auth-type/auth-secret  -> auth_basic + the SAME `auth` key of
+#                             monitoring/monitoring-basic-auth that ingress-nginx
+#                             reads (Alpine musl crypt both sides: bcrypt
+#                             $2a$/$2b$/$2y$, plus nginx's $apr1$/{SHA}). No
+#                             decrypt, copy, re-hash or SOPS change.
+#   proxy-body-size 10m    -> client_max_body_size 10m (413; chunked counted).
+#                             auth_basic runs in the access phase, BEFORE the
+#                             body is read, so an unauthenticated client cannot
+#                             make nginx buffer a body.
+#   proxy-read-timeout 300 -> proxy_read_timeout/proxy_send_timeout 300s
+#   pathType Exact         -> `location =` per host; everything else 404
+#   (and the Authorization header is not passed upstream)
+#
+# Image: upstream nginx 1.30.8 stable (2026-11-24). nginx-unprivileged lagged
+# at 1.30.6; Caddy 2.11.9 failed the Go CVE gate (go1.27.3, GO-2026-6859).
+#
+# No `return` sits in an authenticated location: `return` runs in the rewrite
+# phase, BEFORE auth_basic, and would skip it (reproduced with a negative
+# control). Authenticated locations end in proxy_pass, a content handler.
+#
+# No app.kubernetes.io/instance label: Argo CD tracks by it and would adopt
+# (and prune) objects in this Argo-managed namespace.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: push-auth-proxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: push-auth-proxy
+data:
+  nginx.conf: |
+    worker_processes 1;
+    pid /tmp/nginx.pid;
+    error_log stderr warn;
+    events { worker_connections 1024; }
+    http {
+      server_tokens off;
+      # One JSON line per request. upstream_status is "" when nothing was
+      # proxied: acceptance counts these to prove denials never reached a backend.
+      log_format push escape=json '{"t":"$time_iso8601","host":"$host","uri":"$request_uri","method":"$request_method","status":$status,"upstream_status":"$upstream_status","request_length":$request_length}';
+      access_log /dev/stdout push;
+      client_body_temp_path /tmp/client_body;
+      proxy_temp_path /tmp/proxy;
+      fastcgi_temp_path /tmp/fastcgi;
+      uwsgi_temp_path /tmp/uwsgi;
+      scgi_temp_path /tmp/scgi;
+      client_max_body_size 10m;
+      client_body_buffer_size 1m;
+      client_body_timeout 60s;
+      proxy_http_version 1.1;
+      proxy_request_buffering on;
+      proxy_connect_timeout 5s;
+      proxy_read_timeout 300s;
+      proxy_send_timeout 300s;
+      proxy_set_header Authorization "";
+      proxy_set_header Connection "";
+
+      # Unknown Host: nothing is proxied.
+      server {
+        listen 8080 default_server;
+        location / { return 404; }
+      }
+      server {
+        listen 8080;
+        server_name prometheus.sharmamohit.com;
+        location = /api/v1/write {
+          auth_basic "restricted";
+          auth_basic_user_file /etc/basic-auth/auth;
+          proxy_pass http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090;
+        }
+        location / { return 404; }
+      }
+      server {
+        listen 8080;
+        server_name loki.sharmamohit.com;
+        location = /loki/api/v1/push {
+          auth_basic "restricted";
+          auth_basic_user_file /etc/basic-auth/auth;
+          proxy_pass http://loki.monitoring.svc.cluster.local:3100;
+        }
+        location / { return 404; }
+      }
+      # Probes only; no Service port points here.
+      server {
+        listen 8081;
+        access_log off;
+        location = /healthz { return 200; }
+        # In-flight accounting for the drain gate (D-new --scope push). Pod-local
+        # port, not on the Service; read via the API server pod proxy. "Writing"
+        # counts every request from header-parsed to finalized (body upload and
+        # upstream wait included), plus this status request itself.
+        location = /stub_status { stub_status; }
+        location / { return 404; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: push-auth-proxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: push-auth-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: push-auth-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: push-auth-proxy
+      annotations:
+        # Bump when nginx.conf above changes; ConfigMap edits do not restart pods.
+        config-revision: "1"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: push-auth-proxy
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:1.30.8-alpine-slim@sha256:e9eaa7298465eab06d618c51556fdcf3fb5061f9ff40bd28ee898fbd7ee7f900
+          # Bypass the image entrypoint: its scripts rewrite /etc/nginx (read-only here).
+          command: ["nginx", "-c", "/etc/nginx-push/nginx.conf", "-g", "daemon off;"]
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: health
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              # bcrypt is CPU-bound; a guessing flood is contained here.
+              cpu: "1"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx-push
+              readOnly: true
+            - name: htpasswd
+              mountPath: /etc/basic-auth
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: config
+          configMap:
+            name: push-auth-proxy
+        - name: htpasswd
+          secret:
+            secretName: monitoring-basic-auth
+            defaultMode: 0440
+            items:
+              - key: auth
+                path: auth
+        # Authenticated bodies > 1 MiB spill here (<= 10 MiB each).
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: push-auth-proxy
+  namespace: monitoring
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: push-auth-proxy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: push-auth-proxy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: push-auth-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: push-auth-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
