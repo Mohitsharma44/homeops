@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: prometheus-smartctl-exporter
-    targetRevision: "0.x"
+    targetRevision: "0.19.2"
     helm:
       valuesObject:
         serviceMonitor:
@@ -35,8 +35,5 @@ spec:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true

@@ -13,7 +13,7 @@ spec:
     # Bitnami migrated to OCI-only; legacy HTTP repo no longer serves charts
     repoURL: registry-1.docker.io/bitnamicharts
     chart: thanos
-    targetRevision: "17.x"
+    targetRevision: "17.3.1"
     helm:
       valuesObject:
         # Bitnami removed free images from Docker Hub (Aug 2025)
@@ -81,9 +81,6 @@ spec:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
