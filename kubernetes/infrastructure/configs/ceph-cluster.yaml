@@ -34,7 +34,7 @@ spec:
     # Keep the running Ceph version fixed during CephX key rotation.
     cephImage:
       repository: quay.io/ceph/ceph
-      tag: v19.2.6
+      tag: v19.2.7
     cephClusterSpec:
       security:
         cephx:
