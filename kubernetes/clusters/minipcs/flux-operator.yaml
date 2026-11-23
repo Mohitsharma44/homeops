@@ -1,0 +1,40 @@
+# flux-operator, managed by Flux itself (adopted 2026-11 from the manual
+# `helm install` in README.md). helm-controller adopts the existing release
+# named flux-operator by upgrading it in place; nothing is uninstalled.
+#
+# SAFETY: never delete this HelmRelease while it is unsuspended -- helm-controller
+# would uninstall the operator. Suspend first (spec.suspend: true), then delete.
+# CRDs carry helm.sh/resource-policy: keep, so FluxInstance/Flux survive even then.
+# Out-of-band recovery: docs/flux.md "flux-operator recovery".
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: flux-operator
+  namespace: flux-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  interval: 30m
+  url: oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator
+  layerSelector:
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
+  ref:
+    tag: "0.40.0"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flux-operator
+  namespace: flux-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  interval: 30m
+  releaseName: flux-operator
+  storageNamespace: flux-system
+  chartRef:
+    kind: OCIRepository
+    name: flux-operator
+  timeout: 5m
+  # No values: the manual install used chart defaults (helm get values = null).
