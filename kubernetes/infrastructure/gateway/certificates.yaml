@@ -1,0 +1,36 @@
+# The Gateway's own certificates, issued in its namespace so no cross-namespace
+# Secret reference (ReferenceGrant) is needed. They duplicate, on purpose, the
+# two ingress-nginx certificates (ingress-nginx/default-tls-cert and
+# sftpgo/drive-tls-cert), which stay untouched for rollback until retirement.
+#
+# Two certificates, because a wildcard is ONE label deep: *.sharmamohit.com
+# does not cover drive.proxy.sharmamohit.com.
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: eg-wildcard-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: eg-wildcard-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: "*.sharmamohit.com"
+  dnsNames:
+    - "sharmamohit.com"
+    - "*.sharmamohit.com"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: eg-drive-tls
+  namespace: envoy-gateway-system
+spec:
+  secretName: eg-drive-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: drive.proxy.sharmamohit.com
+  dnsNames:
+    - drive.proxy.sharmamohit.com

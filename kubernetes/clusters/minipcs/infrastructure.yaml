@@ -40,3 +40,31 @@ spec:
     provider: sops
     secretRef:
       name: sops-age
+
+---
+# Envoy Gateway configuration (P12). Depends on infra-envoy-gateway (Gateway
+# API + EG CRDs, controller Ready; clusters/minipcs/envoy-gateway.yaml),
+# infra-controllers (cert-manager, MetalLB), infra-configs (the
+# monitoring/kaneo/sftpgo namespaces and the monitoring-basic-auth Secret) and
+# apps (the argocd namespace). Nothing depends on it, so a bad route cannot
+# block the chain.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-gateway
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-envoy-gateway
+    - name: infra-controllers
+    - name: infra-configs
+    - name: apps
+  interval: 1h
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./kubernetes/infrastructure/gateway
+  prune: true
+  wait: true

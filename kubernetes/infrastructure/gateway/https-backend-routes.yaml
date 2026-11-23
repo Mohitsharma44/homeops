@@ -1,0 +1,143 @@
+# Argo CD and the Ceph dashboard: the Ingresses say ssl-passthrough=true, but
+# the live controller has NO --enable-ssl-passthrough flag, so ingress-nginx
+# TERMINATES their TLS with the wildcard certificate and re-encrypts to the
+# backend WITHOUT verifying it (proxy_ssl_verify off). Measured 2026-11-23:
+#   argocd-server: self-signed O=Argo CD, CA:FALSE, expires 2027-02-03 (Argo CD
+#                  regenerates it), SANs argocd-server[.argocd[.svc[.cluster.local]]]
+#   ceph-dashboard: self-signed CN=ceph-dashboard, NO SAN at all
+# Neither can be validated without changing the app (Ceph changes are out of
+# P12 scope), so this keeps exactly today's posture: terminate here, re-encrypt
+# with insecureSkipVerify. Browsers keep seeing the wildcard certificate, as
+# today. A TLSRoute passthrough would instead show them the self-signed cert.
+# Follow-up (P12b): issue argocd-server-tls from an internal cert-manager CA
+# and switch Argo CD to a BackendTLSPolicy with that CA.
+#
+# Body cap 1Mi on both (= live client_max_body_size 1m), via requestBuffer.
+# Argo CD's web terminal (exec.enabled: "true" in argocd-hr.yaml) is a
+# WebSocket at Exact /terminal (server/server.go@v3.6.2 mux.Handle("/terminal")),
+# so it is a separate unbuffered route narrowed to GET + Upgrade: websocket.
+# gRPC-web/gRPC requests are unary or server-streaming (the client half-closes
+# the request), so buffering the request side does not block them; acceptance
+# proves it with `argocd version --grpc-web` and native gRPC.
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: argocd-server-tls
+  namespace: argocd
+spec:
+  endpoints:
+    - fqdn:
+        hostname: argocd-server.argocd.svc.cluster.local
+        port: 443
+  tls:
+    insecureSkipVerify: true
+    sni: argocd-server.argocd.svc.cluster.local
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - argocd.sharmamohit.com
+  rules:
+    - backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: argocd-server-tls
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: ceph-dashboard-tls
+  namespace: rook-ceph
+spec:
+  endpoints:
+    - fqdn:
+        hostname: rook-ceph-mgr-dashboard.rook-ceph.svc.cluster.local
+        port: 8443
+  tls:
+    insecureSkipVerify: true
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: rook-ceph-dashboard
+  namespace: rook-ceph
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - rook-ceph.sharmamohit.com
+  rules:
+    - backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: ceph-dashboard-tls
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd-terminal
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - argocd.sharmamohit.com
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /terminal
+          method: GET
+          headers:
+            - name: Upgrade
+              type: RegularExpression
+              value: "(?i)^websocket$"
+      backendRefs:
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: argocd-server-tls
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: argocd-body-cap
+  namespace: argocd
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: argocd-server
+  requestBuffer:
+    limit: 1Mi
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: ceph-dashboard-body-cap
+  namespace: rook-ceph
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: rook-ceph-dashboard
+  requestBuffer:
+    limit: 1Mi

@@ -1,0 +1,159 @@
+# Plain-HTTP backends behind TLS termination: Grafana and Kaneo.
+#
+# Body cap: ingress-nginx runs these with client_max_body_size 1m (chart
+# default; read from the live nginx.conf). The cap is kept with a
+# BackendTrafficPolicy requestBuffer of 1Mi (Envoy buffers the body and
+# answers 413 above 1 MiB, chunked included).
+#
+# The one exception per app is its WebSocket endpoint. A request buffer waits
+# for the end of the request body, which an upgraded connection never sends,
+# so buffering would hang the upgrade (EG requestBuffer API docs). Those rules
+# are therefore their own HTTPRoute, narrowed to: Exact/Prefix path of the
+# app's WebSocket handler + method GET + an `Upgrade: websocket` header. The
+# residual exposure is a GET carrying a body to that one handler; nginx did not
+# frame-limit upgraded connections either. Verified handlers:
+#   Grafana 13 Live:  Exact /api/live/ws
+#   Kaneo 2.50.0 (the version P11 installs; P12 entry gate tests/p12-entry.sh
+#                     refuses to proceed on any other version or digest):
+#                     exactly two handlers, both under app.route("/api", api)
+#                     (apps/api/src/index.ts@v2.50.0):
+#                       api.get("/ws/user", upgradeWebSocket(...))   -> Exact /api/ws/user
+#                         (client: apps/web/src/hooks/use-user-websocket.ts ->
+#                          /api/ws/user?windowId=...; the query is not part of the match)
+#                       api.get("/ws/:projectId", upgradeWebSocket(...))
+#                         projectId = cuid2 createId(): 24 chars [a-z0-9]
+#                         (database/schema.ts@v2.50.0) -> anchored regex, one segment.
+#                     /api/ws, /api/ws/, /api/ws/user/<x>, deeper descendants and
+#                     other id shapes fall to the capped route. A Kaneo change that
+#                     adds or renames a handler must be reflected here explicitly.
+#
+# Timeouts: no total deadline (`request: 0s`); the listener's 60 s stream idle
+# (= nginx proxy-read-timeout default) bounds dead streams.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - grafana.sharmamohit.com
+  rules:
+    - backendRefs:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana-live
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - grafana.sharmamohit.com
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /api/live/ws
+          method: GET
+          headers:
+            - name: Upgrade
+              type: RegularExpression
+              value: "(?i)^websocket$"
+      backendRefs:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: grafana-body-cap
+  namespace: monitoring
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: grafana
+  requestBuffer:
+    limit: 1Mi
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kaneo
+  namespace: kaneo
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - kaneo.sharmamohit.com
+  rules:
+    - backendRefs:
+        - name: kaneo-kaneo
+          port: 5173
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kaneo-ws
+  namespace: kaneo
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https
+  hostnames:
+    - kaneo.sharmamohit.com
+  rules:
+    - matches:
+        - path:
+            type: RegularExpression
+            value: "^/api/ws/[a-z0-9]{24}$"
+          method: GET
+          headers:
+            - name: Upgrade
+              type: RegularExpression
+              value: "(?i)^websocket$"
+        - path:
+            type: Exact
+            value: /api/ws/user
+          method: GET
+          headers:
+            - name: Upgrade
+              type: RegularExpression
+              value: "(?i)^websocket$"
+      backendRefs:
+        - name: kaneo-kaneo
+          port: 5173
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: kaneo-body-cap
+  namespace: kaneo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kaneo
+  requestBuffer:
+    limit: 1Mi

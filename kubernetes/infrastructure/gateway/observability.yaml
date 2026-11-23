@@ -1,0 +1,67 @@
+# Metrics for the control plane and the proxy fleet (kube-prometheus-stack
+# selects all PodMonitors/PrometheusRules: *SelectorNilUsesHelmValues=false).
+# These replace the ingress-nginx chart's ServiceMonitor + rules, which are
+# removed only at retirement.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-gateway-controller
+  namespace: envoy-gateway-system
+spec:
+  selector:
+    matchLabels:
+      control-plane: envoy-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: envoy-proxy
+  namespace: envoy-gateway-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: proxy
+      app.kubernetes.io/managed-by: envoy-gateway
+  podMetricsEndpoints:
+    - port: metrics
+      path: /stats/prometheus
+---
+# Both ratio alerts use rate() over a window, never raw counters (see the
+# history in the ingress-nginx HelmRelease: raw-counter ratios latch forever).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+spec:
+  groups:
+    - name: envoy-gateway
+      rules:
+        - alert: EnvoyGatewayTooMany5xx
+          expr: |
+            100 * sum(rate(envoy_http_downstream_rq_xx{envoy_response_code_class="5"}[15m]))
+              / sum(rate(envoy_http_downstream_rq_total[15m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: More than 5% of requests through Envoy Gateway returned 5xx in the last 15 minutes
+        - alert: EnvoyGatewayProxyDown
+          expr: count(up{job=~".*envoy-proxy.*"} == 1) < 2 or absent(up{job=~".*envoy-proxy.*"})
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Fewer than 2 Envoy proxy pods are being scraped
+        - alert: EnvoyGatewayCertificateExpiry
+          expr: |
+            (certmanager_certificate_expiration_timestamp_seconds{namespace="envoy-gateway-system"} - time()) < 14 * 86400
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: Gateway certificate {{ $labels.name }} expires in less than 14 days

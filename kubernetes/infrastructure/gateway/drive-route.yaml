@@ -1,0 +1,44 @@
+# SFTPGo web UI/WebClient. Serves BOTH halves of the split horizon:
+#   LAN:    UniFi DNS drive.proxy.sharmamohit.com -> Gateway LB IP
+#   public: Pangolin resource `drive` -> site homelab-k8s (newt) ->
+#           https://envoy-home.envoy-gateway-system.svc.cluster.local:443, SNI drive.proxy
+# Replaces the sftpgo-ui Ingress annotations:
+#   proxy-body-size 0 / request-buffering off -> NO requestBuffer here (Envoy
+#       streams with flow control; SFTPGo's own max_upload_file_size is the limit)
+#   proxy-read/send-timeout 3600 -> streamIdleTimeout 3600s (inactivity, like
+#       nginx's per-read/per-write timers) and no total deadline, so a slow but
+#       ACTIVE transfer may exceed an hour, as it can today.
+# Never attach the monitoring BackendTrafficPolicy (10Mi full-body buffer) here.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sftpgo-ui
+  namespace: sftpgo
+spec:
+  parentRefs:
+    - name: eg-home
+      namespace: envoy-gateway-system
+      sectionName: https-drive
+  hostnames:
+    - drive.proxy.sharmamohit.com
+  rules:
+    - backendRefs:
+        - name: sftpgo
+          port: 80
+      timeouts:
+        request: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: sftpgo-ui-streaming
+  namespace: sftpgo
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: sftpgo-ui
+  timeout:
+    http:
+      streamIdleTimeout: 3600s

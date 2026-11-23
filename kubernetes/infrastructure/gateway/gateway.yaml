@@ -1,0 +1,122 @@
+# Listeners:
+#   http              :80   only the HTTP->HTTPS redirect route (this namespace)
+#   https-drive       :443  drive.proxy.sharmamohit.com, its own certificate
+#   https-prometheus  :443  prometheus.sharmamohit.com  } push hosts: routes ONLY from
+#   https-loki        :443  loki.sharmamohit.com        } this admin namespace
+#   https             :443  *.sharmamohit.com, the wildcard certificate
+# Exact-hostname listeners win over the wildcard: a client sending SNI
+# prometheus/loki is served ONLY the routes attached to that listener, which
+# only envoy-gateway-system may author (push-routes.yaml). A route an app
+# namespace attaches to the wildcard listener for those hostnames is never
+# selected for that SNI.
+#
+# Routes may attach to the wildcard listener ONLY from the namespaces listed,
+# matched on the immutable kubernetes.io/metadata.name label. Adding an app
+# means adding its namespace here on purpose.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: eg-home
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: eg-home
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-drive
+      protocol: HTTPS
+      port: 443
+      hostname: drive.proxy.sharmamohit.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: eg-drive-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [sftpgo]
+    - name: https-prometheus
+      protocol: HTTPS
+      port: 443
+      hostname: prometheus.sharmamohit.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: eg-wildcard-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-loki
+      protocol: HTTPS
+      port: 443
+      hostname: loki.sharmamohit.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: eg-wildcard-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.sharmamohit.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: eg-wildcard-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [argocd, rook-ceph, monitoring, kaneo]
+---
+# Client-side hardening for every listener of the Gateway.
+#   - TLS >= 1.2 (explicit; it is also the default).
+#   - Headers with underscores are DROPPED (header-name smuggling defence;
+#     nothing here sends them).
+#   - 10 s to receive request headers (slow-loris bound). No whole-request
+#     receive deadline: SFTPGo uploads may legitimately run for hours.
+#   - 60 s stream idle timeout at the LISTENER = ingress-nginx's
+#     proxy-read-timeout default for the UI hosts. Load-bearing: without it, a
+#     route with `timeouts.request: 0s` makes EG 1.9 copy that 0 into the
+#     route's idle_timeout, which DISABLES idle detection (verified in the
+#     generated xDS). Routes that need longer set their own BackendTrafficPolicy
+#     (push 300 s, sftpgo 3600 s), exactly the nginx annotations they replace.
+#   - No clientIPDetection: Envoy trusts no inbound X-Forwarded-For and appends
+#     the real peer, which is what SFTPGo's proxy_allowed (pod CIDR,
+#     rightmost hop) expects — the same as ingress-nginx today.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: eg-home
+  namespace: envoy-gateway-system
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg-home
+  tls:
+    minVersion: "1.2"
+  headers:
+    withUnderscoresAction: DropHeader
+  timeout:
+    http:
+      requestHeadersReceivedTimeout: 10s
+      streamIdleTimeout: 60s

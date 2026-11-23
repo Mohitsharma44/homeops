@@ -1,0 +1,15 @@
+# Envoy Gateway configuration: Gateway, certificates, UI/drive routes and
+# policies. Reconciled by its own Flux Kustomization (infra-gateway) so a bad
+# route or policy cannot block infra-configs or, through it, apps.
+# The monitoring push hosts are NOT here: see ../gateway-push/ (A3).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - certificates.yaml
+  - gatewayclass.yaml
+  - gateway.yaml
+  - redirect-route.yaml
+  - app-routes.yaml
+  - https-backend-routes.yaml
+  - drive-route.yaml
+  - observability.yaml

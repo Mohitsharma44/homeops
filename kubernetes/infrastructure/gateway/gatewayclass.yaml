@@ -1,0 +1,64 @@
+# One GatewayClass, one EnvoyProxy, one Gateway. All three are admin-owned and
+# live only in this repo; app namespaces get HTTPRoutes and nothing else.
+#
+# The proxy Service has a FIXED name so Pangolin's drive target can name it
+# (envoy-home.envoy-gateway-system.svc.cluster.local) and a FIXED LB IP.
+# 192.168.11.91 was proven free on 2026-11-23: MetalLB has allocated only .90,
+# UniFi has no client, reservation or DNS record at .91, and DHCP serves
+# .100-.254. Note .89 (nvr) is INSIDE the MetalLB pool — never let this Service
+# auto-assign; the annotation below is load-bearing.
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: eg-home
+  namespace: envoy-gateway-system
+spec:
+  logging:
+    level:
+      default: warn
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2
+        container:
+          image: docker.io/envoyproxy/envoy:distroless-v1.39.6@sha256:1cac8b3a2f72d5a0918f54d7b49e68aae0b0ba325c2d50c8a9a3fff7a4d1f994
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+        pod:
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/component: proxy
+                      gateway.envoyproxy.io/owning-gateway-name: eg-home
+      envoyPDB:
+        minAvailable: 1
+      envoyService:
+        name: envoy-home
+        type: LoadBalancer
+        # Local: LAN clients' real IPs reach Envoy, and MetalLB announces only
+        # from nodes running a proxy pod.
+        externalTrafficPolicy: Local
+        annotations:
+          metallb.io/address-pool: first-pool
+          metallb.io/loadBalancerIPs: 192.168.11.91
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg-home
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: eg-home
+    namespace: envoy-gateway-system
