@@ -84,12 +84,25 @@ radosgw-admin user info --uid=s3user
 | Loki WAL | ceph-block | 10Gi |
 | Tempo WAL | ceph-block | 10Gi |
 
-## CephX security state (2026-11-22)
+## Current version and CephX security state (2026-11-23)
 
-CVE-2025-30156 daemon-key remediation is complete on **Rook v1.19.12 / Ceph
-19.2.6**, without changing either version. `cephImage` is explicitly pinned to
-`quay.io/ceph/ceph:v19.2.6`; the running daemon/toolbox digest remains
-`sha256:ff836bb28e7d0be0ec4dd22e79407174452a96e11ee62e9cdd1fa47f4bcc3bdc`.
+CVE-2025-30156 daemon-key remediation completed on Rook v1.19.12 / Ceph
+19.2.6 during P4. P6 subsequently upgraded Ceph to **19.2.7**, retaining
+**Rook v1.19.12** and daemon key generation 2. `cephImage` is explicitly pinned to
+`quay.io/ceph/ceph:v19.2.7`; all 18 running daemon/toolbox pods (32 containers)
+use digest `sha256:3fc0a79f1c671f0e75be24ba77a4ab32227e5ea080e16dfc0840a1dc6c30bf7e`.
+The linux/amd64 platform manifest is
+`sha256:b7363bbc7e9e905dcc91a0c542a81916e95a96724018b8d85a374d21714bb1f9`.
+`ceph versions` confirms all 11 mon/mgr/osd/mds/rgw daemons at 19.2.7.
+
+The patch roll kept at most one OSD down and monitor quorum at two or more.
+The three nonclean-PG intervals recovered to 201 active+clean in 22.03, 24.04
+and 20.03 seconds. The independent filesystem reconciler briefly raised
+`MDS_ALL_DOWN` during its roll (about eight seconds), then restored active and
+standby-replay MDS automatically. Child reconcilers can roll alongside the core
+upgrade, so the daemon ordering is not globally serial. Final CephCluster,
+CephFilesystem and CephObjectStore phases are Ready, Ceph is HEALTH_OK, and all
+nine existing claims remain Bound. Ceph image downgrades are unsupported.
 
 The CephCluster uses `security.cephx.daemon.keyRotationPolicy: KeyGeneration`
 and `keyGeneration: 2`. Admin, monitor, manager, OSD, crash collector and exporter
