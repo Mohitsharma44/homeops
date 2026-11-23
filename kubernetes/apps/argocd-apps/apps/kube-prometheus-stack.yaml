@@ -2295,8 +2295,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
-    # P10 backup freeze: auto-sync removed while the app is quiesced for an application-consistent
-    # SQLite copy. Revert this commit to restore automated prune+selfHeal.
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
