@@ -113,8 +113,8 @@ spec:
     repoURL: ghcr.io/sftpgo/helm-charts
     chart: sftpgo
     # OCI tag, no leading "v". Pulled and rendered locally at
-    # sha256:110fd51f708e48b5a187971d4ea76d837bca24172af155fd9fa37e1d80dfb6bf.
-    targetRevision: "0.47.0"
+    # sha256:4bde21dbd935a627d06a4eca7cfae3f61d967ef9f4a0e600027aea1475c60a87.
+    targetRevision: "0.48.0"
     helm:
       valuesObject:
         replicaCount: 1
@@ -129,7 +129,7 @@ spec:
           # citations and the running binary are the same artifact. Plain tag =
           # the Debian variant = CGO on = sqlite available. Trap 2: never a
           # "-distroless*" tag.
-          tag: "v2.7.5"
+          tag: "v2.7.6"
           pullPolicy: IfNotPresent
 
         # Browser file manager only (ticket 15 Q1). Setting sftpd.enabled false
