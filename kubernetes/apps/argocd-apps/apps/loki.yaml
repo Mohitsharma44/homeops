@@ -12,10 +12,10 @@ spec:
   source:
     repoURL: https://grafana-community.github.io/helm-charts
     chart: loki
-    targetRevision: "6.57.0"
+    targetRevision: "13.7.2"
     helm:
       valuesObject:
-        deploymentMode: SingleBinary
+        deploymentMode: Monolithic
         loki:
           auth_enabled: true
           commonConfig:
@@ -90,10 +90,6 @@ spec:
         test:
           enabled: false
         monitoring:
-          selfMonitoring:
-            enabled: false
-            grafanaAgent:
-              installOperator: false
           serviceMonitor:
             enabled: true
   destination:
