@@ -114,6 +114,16 @@ spec:
       name: eg-home
   tls:
     minVersion: "1.2"
+    # Explicit ALPN = ingress-nginx parity (h2 on every host). Without it EG
+    # sees the shared wildcard SAN on https / https-prometheus / https-loki
+    # (OverlappingTLSConfig) and falls back to http/1.1 only, which breaks
+    # Argo CD native gRPC and HTTP/2 for every UI host. A browser coalescing a
+    # UI-host connection onto a push host lands in the https listener's route
+    # table and gets a 404; it never reaches the push routes. Go clients (Alloy)
+    # do not coalesce across hosts.
+    alpnProtocols:
+      - h2
+      - http/1.1
   headers:
     withUnderscoresAction: DropHeader
   timeout:
