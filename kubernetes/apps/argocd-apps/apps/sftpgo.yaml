@@ -457,6 +457,9 @@ spec:
     # Kustomization depends on. CreateNamespace below is a harmless no-op.
     namespace: sftpgo
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - SkipDryRunOnMissingResource=true
