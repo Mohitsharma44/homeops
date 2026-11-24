@@ -17,6 +17,8 @@ spec:
       valuesObject:
         deploymentMode: Monolithic
         loki:
+          extraMemberlistConfig:
+            abort_if_cluster_join_fails: false
           auth_enabled: true
           commonConfig:
             replication_factor: 1
