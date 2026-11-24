@@ -10,9 +10,9 @@ metadata:
 spec:
   project: monitoring
   source:
-    repoURL: https://grafana.github.io/helm-charts
+    repoURL: https://grafana-community.github.io/helm-charts
     chart: loki
-    targetRevision: "6.55.0"
+    targetRevision: "6.57.0"
     helm:
       valuesObject:
         deploymentMode: SingleBinary
@@ -50,6 +50,9 @@ spec:
         singleBinary:
           replicas: 1
           persistence:
+            enableStatefulSetAutoDeletePVC: true
+            whenDeleted: Retain
+            whenScaled: Retain
             storageClass: ceph-block
             size: 10Gi
           extraEnv:
