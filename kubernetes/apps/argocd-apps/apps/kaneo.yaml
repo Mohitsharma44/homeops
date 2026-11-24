@@ -28,7 +28,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/usekaneo/kaneo.git
-    targetRevision: v2.7.2
+    targetRevision: "v2.50.0"
     path: charts/kaneo
     helm:
       valuesObject:
@@ -66,7 +66,7 @@ spec:
         kaneo:
           image:
             repository: ghcr.io/usekaneo/kaneo
-            tag: "2.7.2"
+            tag: "2.50.0"
             pullPolicy: IfNotPresent
           service:
             type: ClusterIP
@@ -97,6 +97,7 @@ spec:
             #   anonymous/demo session loophole.
             disableRegistration: false
             disablePasswordRegistration: true
+            disableEmailOtpSignIn: true
             # Use the chart's "external DB via existingSecret" path so the full
             # DATABASE_URL comes from the SOPS secret. The bundled Postgres
             # above still gets deployed; we just bypass the chart's inline
@@ -111,6 +112,8 @@ spec:
           # PocketID OIDC. Reads client_id/secret from kaneo-secret; discovery
           # URL is non-sensitive and inlined.
           extraEnv:
+            - name: TRUSTED_PROXIES
+              value: "10.244.0.0/16"
             # Disable anonymous/guest sessions so OIDC is the only login path.
             - name: DISABLE_GUEST_ACCESS
               value: "true"
