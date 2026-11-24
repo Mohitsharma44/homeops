@@ -1,0 +1,16 @@
+# Envoy Gateway control plane AND the Envoy proxy fleet (ControllerNamespace
+# deploy mode: the proxies run here too, not in the Gateway's namespace).
+#
+# enforce=baseline, audit/warn=restricted: the controller and certgen Job are
+# restricted-compliant (EG 1.9.0 hardening), but the proxy Deployment is
+# generated at runtime and has not been checked against `restricted` yet.
+# Tighten enforce to restricted once `kubectl get events` shows no PSA warnings
+# for the proxy pods. Never relax to privileged: nothing here needs it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: envoy-gateway-system
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

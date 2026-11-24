@@ -5,4 +5,5 @@ resources:
   - flux-instance.yaml
   - flux-operator.yaml
   - infrastructure.yaml
+  - envoy-gateway.yaml
   - apps.yaml

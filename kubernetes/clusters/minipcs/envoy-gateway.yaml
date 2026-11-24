@@ -1,0 +1,124 @@
+# Envoy Gateway (P12): CRDs and controller, kept OUT of infra-controllers so a
+# failure here cannot block infra-configs/apps.
+#
+# CRDs are NOT installed by Helm. gateway-crds-helm ships 4.9 MB of templates,
+# and Helm stores the whole chart in its release Secret (2.27 MB encoded > the
+# 1 MiB Secret limit), so helm-controller cannot install it. Upstream documents
+# a server-side apply of the plain CRDs instead; that is what this does.
+#
+# Sources are the upstream repos pinned by COMMIT, with a sparse checkout of the
+# CRD directory only:
+#   gateway-api v1.6.1 (lightweight tag) =
+#     8bb74df00e56ec8f944d48c25e6c1c9c2f6848e3
+#     config/crd/standard: 10 standard-channel CRDs + the upstream
+#     safe-upgrades ValidatingAdmissionPolicy/Binding (refuses CRD downgrades
+#     and experimental CRDs over standard ones).
+#   envoyproxy/gateway v1.9.4 (annotated tag 10781626, ^{}) =
+#     fc4101508dbc36da58f35300aa62888c301e6975
+#     charts/gateway-helm/charts/crds/crds/generated: the 8 EG CRDs as plain
+#     YAML (the gateway-crds-helm copies are wrapped in template conditionals).
+# This is byte-for-byte the object set gateway-crds-helm v1.9.4 renders with
+# gatewayAPI.channel=standard + envoyGateway.enabled (18 CRDs + VAP + binding).
+#
+# CRD safety: prune: false, and every CRD carries
+# kustomize.toolkit.fluxcd.io/prune=disabled, so neither deleting these
+# Kustomizations nor removing a file upstream can delete a CRD (and with it
+# every Gateway/HTTPRoute/policy). Remove CRDs by hand only after
+# `kubectl get gateway,httproute,referencegrant -A` is empty.
+# Bumping: change BOTH the commit and the comment above, verify the commit
+# against the upstream tag object, and keep the controller chart in step.
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://github.com/kubernetes-sigs/gateway-api
+  ref:
+    commit: 8bb74df00e56ec8f944d48c25e6c1c9c2f6848e3
+  sparseCheckout:
+    - config/crd/standard
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: envoy-gateway-crds
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://github.com/envoyproxy/gateway
+  ref:
+    commit: fc4101508dbc36da58f35300aa62888c301e6975
+  sparseCheckout:
+    - charts/gateway-helm/charts/crds/crds/generated
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 1h
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: gateway-api-crds
+  path: ./config/crd/standard
+  prune: false
+  force: false
+  wait: true
+  patches:
+    - target:
+        kind: CustomResourceDefinition
+      patch: |
+        - op: add
+          path: /metadata/annotations/kustomize.toolkit.fluxcd.io~1prune
+          value: disabled
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-envoy-gateway-crds
+  namespace: flux-system
+spec:
+  interval: 1h
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: envoy-gateway-crds
+  path: ./charts/gateway-helm/charts/crds/crds/generated
+  prune: false
+  force: false
+  wait: true
+  patches:
+    - target:
+        kind: CustomResourceDefinition
+      patch: |
+        - op: add
+          path: /metadata/annotations/kustomize.toolkit.fluxcd.io~1prune
+          value: disabled
+---
+# The controller (ns + chart source + HelmRelease). A HelmRelease can only
+# depend on other HelmReleases, so the CRD ordering lives here.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-envoy-gateway
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infra-gateway-api-crds
+    - name: infra-envoy-gateway-crds
+  interval: 1h
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./kubernetes/infrastructure/controllers/envoy-gateway
+  prune: true
+  wait: true

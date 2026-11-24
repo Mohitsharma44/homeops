@@ -1,0 +1,49 @@
+# Envoy Gateway controller. Side by side with ingress-nginx; it serves nothing
+# until kubernetes/infrastructure/gateway/ adds a GatewayClass and Gateway.
+#
+# Security baseline (see the P12 research notes):
+#   - Backend API ON: needed only for the two HTTPS-backend routes (Argo CD,
+#     Ceph dashboard), which keep today's unverified upstream TLS. Backend can
+#     point at arbitrary FQDNs/IPs, so authoring it stays admin-only (this repo).
+#   - EnvoyProxyPatch OFF: EnvoyProxy `patch` fields run with the controller's
+#     privileges (EG 1.9.2 advisory). Nothing here uses them.
+#   - Lua stays OFF (1.9 default), as do Wasm, dynamic modules and
+#     EnvoyPatchPolicy (not enabled).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+spec:
+  interval: 30m
+  timeout: 5m
+  releaseName: envoy-gateway
+  chartRef:
+    kind: OCIRepository
+    name: envoy-gateway
+  install:
+    crds: Skip
+    remediation:
+      retries: 3
+  upgrade:
+    crds: Skip
+    remediation:
+      retries: 3
+  values:
+    crds:
+      # CRDs come from the infra-gateway-api-crds and infra-envoy-gateway-crds
+      # Flux Kustomizations (clusters/minipcs/envoy-gateway.yaml). Keep this
+      # false or the subchart would try to own the same CRDs (experimental
+      # channel).
+      enabled: false
+    global:
+      images:
+        envoyGateway:
+          image: docker.io/envoyproxy/gateway:v1.9.4@sha256:defcc385af0998a5e879d56c2760825cd6f107b2ddd62002166c3731f8173164
+    config:
+      envoyGateway:
+        extensionApis:
+          enableBackend: true
+        runtimeFlags:
+          disabled:
+            - EnvoyProxyPatch
