@@ -57,6 +57,8 @@ spec:
           thanosServiceMonitor:
             enabled: true
         grafana:
+          deploymentStrategy:
+            type: Recreate
           # Use SOPS-encrypted Secret (applied by Flux from
           # kubernetes/infrastructure/configs/grafana-admin-secret.yaml)
           # to prevent Helm from regenerating a random adminPassword on
