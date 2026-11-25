@@ -17,12 +17,12 @@ Step-by-step instructions for provisioning bare metal Talos nodes with Sidero Om
 
 ## Talos Configuration
 
-- **Version**: Talos v1.14.6, Kubernetes v1.35.10 (upgraded 2026-11-22 from Talos v1.12.4 / k8s v1.35.1; cluster created on v1.12.0)
+- **Version**: Talos v1.14.6, Kubernetes v1.36.6 (k8s 1.35.10 → 1.36.6 on 2026-11-25; Talos v1.12.4 / k8s v1.35.1 → Talos v1.14.6 / k8s v1.35.10 on 2026-11-22; cluster created on v1.12.0)
 - **Extensions**: amd-ucode, amdgpu, iscsi-tools, util-linux-tools (plus `embedded-config`, which Omni ≥1.13 adds itself for the SideroLink join config)
 - **etcd**: 3.7 storage since Talos 1.14. Metrics are on `:2383`, not `:2379`.
 - **Bootstrap manifests** (flannel, kube-proxy, CoreDNS): Omni's Kubernetes upgrade does **not** update them. After a Talos or Kubernetes
-  upgrade, check `omnictl cluster kubernetes manifest-sync talos-test --dry-run` and apply it on purpose. Last synced 2026-11-22: flannel v0.28.10
-  (nftables mode), kube-proxy v1.35.10, CoreDNS v1.14.7.
+  upgrade, check `omnictl cluster kubernetes manifest-sync talos-test --dry-run` and apply it on purpose. Last synced 2026-11-25 (kube-proxy only): flannel v0.28.10
+  (nftables mode), kube-proxy v1.36.6, CoreDNS v1.14.7.
 
 ### Time sync: plain NTP is required (machine ConfigPatches `450-ntp-plain-talos0{1,2,3}`)
 From Talos 1.14, a machine with no explicit time config uses **NTS** to `time.cloudflare.com`. On this LAN the NTS key exchange (TCP 4460)
