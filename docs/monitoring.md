@@ -263,7 +263,7 @@ Neither is covered by `source="infra"` queries — `node_uname_info{source="infr
 
 ## External Write Endpoints
 
-Authenticated Ingress endpoints allow external Docker hosts to push metrics and logs into the K8s observability stack. Both use basic auth (`monitoring-basic-auth` secret) and `pathType: Exact` to restrict access to write-only paths — no query endpoints are exposed.
+Authenticated endpoints allow external Docker hosts to push metrics and logs into the K8s observability stack. Envoy Gateway (`eg-home`, `192.168.11.91`) terminates TLS with the `eg-wildcard-tls` certificate and routes both hosts to `push-auth-proxy` (`kubernetes/infrastructure/gateway-push/`), an nginx that checks basic auth against the `auth` key of the `monitoring-basic-auth` secret and exposes only the exact write paths. No query endpoints are exposed.
 
 | Endpoint | URL | Backend | Purpose |
 |----------|-----|---------|---------|
@@ -272,12 +272,12 @@ Authenticated Ingress endpoints allow external Docker hosts to push metrics and 
 
 **Prometheus remote-write receiver**: Enabled via `enableRemoteWriteReceiver: true` in kube-prometheus-stack, which passes the `--web.enable-remote-write-receiver` flag to Prometheus.
 
-**Ingress annotations** (both):
-- `auth-type: basic` + `auth-secret: monitoring-basic-auth`
-- `force-ssl-redirect: true` (ensure credentials are never sent over plain HTTP)
-- `proxy-body-size: 10m` (accommodate metric/log batches)
-- `proxy-read-timeout: 300` (allow slow remote-write flushes)
-- No TLS section — wildcard cert handled by ingress-nginx `default-ssl-certificate`
+**push-auth-proxy limits** (both hosts, `gateway-push/auth/push-auth-proxy.yaml`):
+- `auth_basic` with the `monitoring-basic-auth` `auth` key. It runs before the body is read, so an unauthenticated client gets 401 without nginx buffering anything, and the `Authorization` header is not passed upstream.
+- An exact `location =` per host for the write path; every other path returns 404.
+- `client_max_body_size 10m` (413 above that, chunked bodies included).
+- `proxy_read_timeout` / `proxy_send_timeout` 300s (slow remote-write flushes).
+- HTTP is redirected to HTTPS at the Gateway, so credentials never travel in plain text.
 
 **Verification**:
 ```bash
@@ -322,7 +322,7 @@ SOPS-encrypted secrets in `kubernetes/infrastructure/configs/`:
 |--------|-----------|------|---------|
 | `object-store-credentials` | monitoring | `loki-*`, `tempo-*`, `thanos-*` access key id + secret | Loki, Tempo (via env vars) |
 | `thanos-objstore-secret` | monitoring | `objstore.yml` | Prometheus Thanos sidecar, Thanos components |
-| `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | Ingress basic auth for external write endpoints |
+| `monitoring-basic-auth` | monitoring | `auth` (htpasswd) | push-auth-proxy basic auth for the external write endpoints |
 | `grafana-admin` | monitoring | `admin-user`, `admin-password` | Grafana local admin (break-glass login at `/login`) |
 | `grafana-oidc` | monitoring | `oauth-client-id`, `oauth-client-secret` | Grafana PocketID SSO (env vars in pod) |
 
@@ -483,7 +483,7 @@ See `CLAUDE.md` Gotcha #8 for the short version.
 
 The following infrastructure components have ServiceMonitors enabled:
 
-- ingress-nginx (metrics + prometheusRule)
+- Envoy Gateway (PodMonitors `envoy-gateway-controller` + `envoy-proxy`, PrometheusRule `envoy-gateway`: `EnvoyGatewayTooMany5xx`, `EnvoyGatewayProxyDown`, `EnvoyGatewayCertificateExpiry`; `infrastructure/gateway/observability.yaml`)
 - MetalLB (serviceMonitor + prometheusRule)
 - rook-ceph operator
 - Ceph cluster (+ PrometheusRules)

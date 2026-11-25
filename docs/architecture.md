@@ -18,7 +18,7 @@ Each level adds detail — start at L0 for orientation, drill down as needed.
                   │  <VPS_PUBLIC_IP>                   │   │                              │
                   │                                │   │  ┌────────────────────────┐  │
                   │  aegis-traefik ─► CrowdSec     │   │  │ K8s Cluster (3 nodes)  │  │
-                  │  Pangolin + Gerbil + Traefik   │   │  │ ingress-nginx :90      │  │
+                  │  Pangolin + Gerbil + Traefik   │   │  │ Envoy Gateway :91      │  │
                   │  PocketID + LLDAP              │   │  │ Prometheus, Loki,      │  │
                   │  Periphery (Komodo agent)      │   │  │ Grafana, Tempo, Thanos │  │
                   │  Alloy (monitoring)            │   │  │ ArgoCD, Rook-Ceph      │  │
@@ -153,10 +153,10 @@ Exceptions: server04 and pve03 run systemd Alloy with extended configs (SMART, j
 │  │  flux-system                                                             │  │
 │  │    ├─► infra-controllers        ├─► infra-configs          ├─► apps      │  │
 │  │    │   cert-manager (3 rep.)    │   ClusterIssuer          │   ArgoCD    │  │
-│  │    │   metallb (L2)             │   *.sharmamohit.com cert │             │  │
-│  │    │   ingress-nginx (:90)      │   MetalLB IPPool 88-98   │             │  │
+│  │    │   metallb (L2)             │   drive-tls-cert (sftpgo)│             │  │
+│  │    │   (Envoy GW: own Ks, below)│   MetalLB IPPool 88-98   │             │  │
 │  │    │   rook-ceph operator       │   CephCluster + pools    │             │  │
-│  │    │                            │   Monitoring ingresses   ├─► apps-cfg  │  │
+│  │    │                            │                          ├─► apps-cfg  │  │
 │  │    │                            │   Monitoring secrets     │   root-app  │  │
 │  │    │                            │   Namespaces             │   (App of   │  │
 │  │    │                            │   Newt credentials       │    Apps)    │  │
@@ -186,6 +186,21 @@ Exceptions: server04 and pve03 run systemd Alloy with extended configs (SMART, j
 │  └──────────────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+
+**HTTP routing (Envoy Gateway).** Every `*.sharmamohit.com` host and `drive.proxy.sharmamohit.com` is served by the Gateway API
+Gateway `eg-home` on `192.168.11.91` (Envoy Gateway v1.9.4). ingress-nginx and `192.168.11.90` were retired in 2026-11. The pieces sit
+in their own Flux Kustomizations, outside `infra-controllers`:
+
+| Kustomization | Path | What |
+|---|---|---|
+| `infra-gateway-api-crds`, `infra-envoy-gateway-crds` | upstream repos pinned by commit (`clusters/minipcs/envoy-gateway.yaml`) | Gateway API + Envoy Gateway CRDs, server-side applied, never pruned |
+| `infra-envoy-gateway` | `infrastructure/controllers/envoy-gateway/` | controller HelmRelease (namespace `envoy-gateway-system`, PSA `restricted`) |
+| `infra-gateway` | `infrastructure/gateway/` | Gateway, certificates (`eg-wildcard-tls`, `eg-drive-tls`), HTTPRoutes, policies, alerts |
+| `infra-gateway-push-auth`, `infra-gateway-push` | `infrastructure/gateway-push/` | basic-auth proxy and routes for the Prometheus/Loki push hosts |
+
+A new app gets an HTTPRoute on `eg-home`, not an Ingress. Pangolin's `drive` target (and its healthcheck) point at
+`envoy-home.envoy-gateway-system.svc.cluster.local:443`.
 
 ---
 
@@ -397,7 +412,7 @@ Emergency backdoor: SSH
 │  │        │ =host    │                  │        │ =racknerd-aegis │       │
 │  │        ▼          │                  │        ▼                 │       │
 │  │  remote_write ────┼──── HTTPS ──────►│  remote_write ──────────┼───┐   │
-│  │  basic auth       │  public ingress  │  basic auth             │   │   │
+│  │  basic auth       │  Envoy GW (.91)  │  basic auth             │   │   │
 │  └──────────────────┘  prometheus.      └──────────────────────────┘   │   │
 │                         sharmamohit.com          WireGuard tunnel      │   │
 │                         /api/v1/write            k8s-prometheus.       │   │
@@ -601,7 +616,7 @@ Emergency backdoor: SSH
 |---------|--------|---------------|
 | LAN | 192.168.11.0/24 | All homelab hosts |
 | MetalLB | 192.168.11.88-98 | K8s LoadBalancer services |
-| K8s Ingress | 192.168.11.90 | *.sharmamohit.com |
+| K8s Gateway (Envoy Gateway `eg-home`) | 192.168.11.91 | *.sharmamohit.com, drive.proxy (LAN) |
 | VPS public | <VPS_PUBLIC_IP> | *.proxy.sharmamohit.com |
 | Pangolin private | *.private.sharmamohit.com | WireGuard tunnel resources |
 
@@ -609,7 +624,7 @@ Emergency backdoor: SSH
 
 | Domain | Points to |
 |--------|-----------|
-| `*.sharmamohit.com` | K8s ingress (192.168.11.90) |
+| `*.sharmamohit.com` | K8s Envoy Gateway `eg-home` (192.168.11.91), one UniFi record per host |
 | `*.proxy.sharmamohit.com` | VPS Traefik (<VPS_PUBLIC_IP>) |
 | `*.private.sharmamohit.com` | Pangolin private resources (WireGuard) |
 | `komodo.sharmamohit.com:9120` | Komodo Core API (HTTP) |
