@@ -1,8 +1,11 @@
 # Kaneo — open-source project management.
 #
-# Source: https://github.com/usekaneo/kaneo (charts/kaneo, pinned to git tag).
+# Source: https://github.com/usekaneo/kaneo (charts/kaneo, pinned to a commit).
 # Kaneo does not publish a Helm registry, so ArgoCD renders the chart directly
-# from the upstream git tag. Bump `targetRevision` to upgrade.
+# from upstream git. targetRevision is the full commit SHA of a release tag, not
+# the tag itself: a tag can be moved upstream and auto-sync would deploy it.
+# To upgrade: `git ls-remote https://github.com/usekaneo/kaneo.git refs/tags/vX.Y.Z`
+# (use the `^{}` line if the tag is annotated) and update both lines below.
 #
 # Secrets live in kubernetes/infrastructure/configs/kaneo-secret.yaml (SOPS).
 # Required keys: auth-secret, postgres-password, database-url,
@@ -28,7 +31,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/usekaneo/kaneo.git
-    targetRevision: "v2.50.0"
+    targetRevision: "9424083b60ad08b39d31f105ffb8264e048fe4b9" # v2.50.0
     path: charts/kaneo
     helm:
       valuesObject:
